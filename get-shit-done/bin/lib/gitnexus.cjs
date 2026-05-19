@@ -481,6 +481,292 @@ function gitNexusStatus(cwd) {
   };
 }
 
+// ─── Query Functions (CJS-05 through CJS-09, SPEC items 8-14) ────────────────
+
+/**
+ * Query GitNexus for process-grouped results matching a search term.
+ * Invokes `gitnexus query <term>` via execGitNexus with budget caps.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} term - Search term
+ * @param {{ budget?: number|null }} [options={}] - Options
+ * @returns {object}
+ */
+function gitNexusQuery(cwd, term, options = {}) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    if (!term) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'query term required' };
+    }
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['query', term, '--limit', '5', '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus query failed' };
+    }
+
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+    if (!parsed.ok) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: parsed.data.message || 'Failed to parse gitnexus query output' };
+    }
+
+    const budget = options.budget || (config.budget && config.budget.query) || 2000;
+    return applyGitNexusBudget(parsed.data, budget, 'query');
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
+/**
+ * Get 360-degree context for a symbol name.
+ * Invokes `gitnexus context <name>` via execGitNexus with budget caps.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} name - Symbol name
+ * @param {{ budget?: number|null }} [options={}] - Options
+ * @returns {object}
+ */
+function gitNexusContext(cwd, name, options = {}) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    if (!name) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'symbol name required' };
+    }
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['context', name, '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus context failed' };
+    }
+
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+    if (!parsed.ok) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: parsed.data.message || 'Failed to parse gitnexus context output' };
+    }
+
+    const budget = options.budget || (config.budget && config.budget.context) || 1500;
+    return applyGitNexusBudget(parsed.data, budget, 'context');
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
+/**
+ * Get blast radius for a target symbol in the given direction.
+ * Invokes `gitnexus impact <target>` via execGitNexus with budget caps.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} target - Target symbol name
+ * @param {string} [direction='upstream'] - Impact direction (upstream or downstream)
+ * @param {{ budget?: number|null }} [options={}] - Options
+ * @returns {object}
+ */
+function gitNexusImpact(cwd, target, direction = 'upstream', options = {}) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    if (!target) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'target symbol required' };
+    }
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['impact', target, '--direction', direction, '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus impact failed' };
+    }
+
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+    if (!parsed.ok) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: parsed.data.message || 'Failed to parse gitnexus impact output' };
+    }
+
+    const budget = options.budget || (config.budget && config.budget.impact) || 1000;
+    return applyGitNexusBudget(parsed.data, budget, 'impact');
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
+/**
+ * Detect changed symbols and affected processes.
+ * Invokes `gitnexus detect-changes --scope <scope>` via execGitNexus.
+ * Handles both JSON and plain text output ("No changes detected.").
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} [scope='unstaged'] - Change scope (unstaged, staged, all, compare)
+ * @param {{ budget?: number|null }} [options={}] - Options
+ * @returns {object}
+ */
+function gitNexusDetectChanges(cwd, scope = 'unstaged', options = {}) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['detect-changes', '--scope', scope, '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus detect-changes failed' };
+    }
+
+    // Try to parse JSON output first
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+
+    if (parsed.ok) {
+      const budget = options.budget || (config.budget && config.budget.detect_changes) || 500;
+      return applyGitNexusBudget(parsed.data, budget, 'detect_changes');
+    }
+
+    // Handle plain text "No changes detected." output
+    const stdout = (result.stdout || '').trim().toLowerCase();
+    if (stdout.includes('no changes detected') || stdout.includes('no changes')) {
+      return { changed_symbols: [], affected_processes: [], risk_summary: 'none' };
+    }
+
+    // Unknown non-JSON output -- treat as no changes detected
+    return { changed_symbols: [], affected_processes: [], risk_summary: 'none' };
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
+/**
+ * Pre-flight check for GitNexus build (CJS-09, D-17).
+ * Checks CLI availability and version. Returns spawn_agent hint on success.
+ * Does NOT execute the build itself.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @returns {object}
+ */
+function gitNexusBuild(cwd) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    // Check if CLI is available
+    const checkResult = execGitNexus(cwd, ['--version'], { timeout: 10000 });
+    if (checkResult.reason === GITNEXUS_REASON.ENOENT) {
+      return { reason: GITNEXUS_REASON.ENOENT, message: 'gitnexus not found on PATH' };
+    }
+    if (checkResult.reason === GITNEXUS_REASON.WSL_NOT_AVAILABLE) {
+      return { reason: checkResult.reason, message: checkResult.stderr || 'WSL not available', suggestion: 'Configure gitnexus.use_wsl: false or install WSL' };
+    }
+    if (checkResult.reason === GITNEXUS_REASON.WSL_DISTRO_MISSING) {
+      return { reason: checkResult.reason, message: checkResult.stderr || 'No WSL distro installed', suggestion: 'Configure gitnexus.use_wsl: false or install a WSL distro' };
+    }
+
+    // Extract version info if available
+    let version = null;
+    let versionWarning = null;
+    if (checkResult.reason === GITNEXUS_REASON.OK && checkResult.stdout) {
+      // Parse version from stdout (may include pino log lines)
+      const lines = checkResult.stdout.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        const versionMatch = line.match(/(\d+\.\d+(?:\.\d+)?)/);
+        if (versionMatch) {
+          version = versionMatch[1];
+          break;
+        }
+      }
+    }
+
+    // Build timeout from config -- default 600s (10 minutes) per D-17
+    const config = readGitNexusConfig(cwd);
+    const timeoutSec = (config.build_timeout) || 600;
+
+    // .gitnexus directory path (will be created by gitnexus analyze)
+    const gitnexusDir = path.join(cwd, '.gitnexus');
+
+    return {
+      action: 'spawn_agent',
+      graphs_dir: gitnexusDir,
+      timeout_seconds: timeoutSec,
+      version,
+      version_warning: versionWarning,
+    };
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
+/**
+ * Rename a symbol across the codebase using graph-backed edits.
+ * STUB: gitnexus rename is not available via CLI (RESEARCH A7).
+ * Returns a structured error directing callers to the MCP tool.
+ * Full rename functionality deferred to Phase 2 SDK integration.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} symbolName - Current symbol name
+ * @param {string} newSymbolName - New symbol name
+ * @param {{ budget?: number|null }} [options={}] - Options (unused in stub)
+ * @returns {object}
+ */
+function gitNexusRename(cwd, symbolName, newSymbolName, options = {}) {
+  // STUB: rename is not available via CLI; use gitnexus_rename MCP tool directly
+  // Full rename functionality (via MCP tool invocation) deferred to Phase 2
+  return {
+    reason: GITNEXUS_REASON.CLI_ERROR,
+    message: 'rename is not available via CLI; use gitnexus_rename MCP tool directly',
+  };
+}
+
+/**
+ * Execute a Cypher query against the GitNexus knowledge graph.
+ * Invokes `gitnexus cypher <query>` via execGitNexus with budget caps.
+ * Never throws (CJS-02).
+ *
+ * @param {string} cwd - Working directory
+ * @param {string} query - Cypher query string
+ * @param {{ budget?: number|null }} [options={}] - Options
+ * @returns {object}
+ */
+function gitNexusCypher(cwd, query, options = {}) {
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    if (!query) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'cypher query required' };
+    }
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['cypher', query, '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus cypher failed' };
+    }
+
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+    if (!parsed.ok) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: parsed.data.message || 'Failed to parse gitnexus cypher output' };
+    }
+
+    const budget = options.budget || (config.budget && config.budget.cypher) || 2000;
+    return applyGitNexusBudget(parsed.data, budget, 'cypher');
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
+}
+
 // ─── Exports ────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -502,4 +788,12 @@ module.exports = {
   applyGitNexusBudget,
   // Status
   gitNexusStatus,
+  // Query functions
+  gitNexusQuery,
+  gitNexusContext,
+  gitNexusImpact,
+  gitNexusDetectChanges,
+  gitNexusBuild,
+  gitNexusRename,
+  gitNexusCypher,
 };

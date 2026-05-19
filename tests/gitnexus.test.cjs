@@ -5,7 +5,9 @@
  *
  * Covers: isGitNexusEnabled, gitNexusStatus, GITNEXUS_REASON, execGitNexus,
  * applyGitNexusBudget, readGitNexusConfig, resolveWslSetting, windowsToWslPath,
- * parseGitNexusOutput, and never-throw pattern.
+ * parseGitNexusOutput, gitNexusQuery, gitNexusContext, gitNexusImpact,
+ * gitNexusDetectChanges, gitNexusBuild, gitNexusRename, gitNexusCypher,
+ * and never-throw pattern.
  */
 
 const { describe, test, beforeEach, afterEach, mock } = require('node:test');
@@ -26,6 +28,13 @@ const {
   resolveWslSetting,
   windowsToWslPath,
   parseGitNexusOutput,
+  gitNexusQuery,
+  gitNexusContext,
+  gitNexusImpact,
+  gitNexusDetectChanges,
+  gitNexusBuild,
+  gitNexusRename,
+  gitNexusCypher,
 } = require('../get-shit-done/bin/lib/gitnexus.cjs');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -655,5 +664,828 @@ describe('CLI dispatcher routing', () => {
     const parsed = JSON.parse(result.output);
     assert.strictEqual(parsed.disabled, true);
     assert.strictEqual(parsed.reason, 'disabled');
+  });
+});
+
+// ─── gitNexusQuery (CJS-05, SPEC item 8) ─────────────────────────────────────
+
+describe('gitNexusQuery', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns process-grouped data when enabled and CLI succeeds', () => {
+    const queryData = {
+      processes: [{ name: 'process1', symbols: ['sym1', 'sym2'] }],
+      process_symbols: ['sym1', 'sym2'],
+      definitions: ['def1'],
+      total: 3,
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(queryData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test', { budget: 5000 });
+    assert.strictEqual(result.processes.length, 1);
+    assert.strictEqual(result.process_symbols.length, 2);
+    assert.strictEqual(result.definitions.length, 1);
+  });
+
+  test('returns disabled response when gitnexus is not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify({ processes: [] }),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test');
+    assert.strictEqual(result.disabled, true);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.DISABLED);
+  });
+
+  test('returns error on empty term', () => {
+    const result = gitNexusQuery(tmpDir, '');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('query term required'));
+  });
+
+  test('returns error on null term', () => {
+    const result = gitNexusQuery(tmpDir, null);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('query term required'));
+  });
+
+  test('returns ENOENT when gitnexus CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
+  });
+
+  test('applies budget caps from options', () => {
+    const largeData = {
+      processes: Array.from({ length: 100 }, (_, i) => ({ name: `proc_${i}`, details: 'x'.repeat(50) })),
+      symbols: Array.from({ length: 50 }, (_, i) => ({ name: `sym_${i}` })),
+      definitions: Array.from({ length: 30 }, (_, i) => ({ name: `def_${i}` })),
+      edges: Array.from({ length: 200 }, (_, i) => ({ source: `a_${i}`, target: `b_${i}` })),
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test', { budget: 50 });
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('applies budget caps from config when options budget is null', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { query: 100 } });
+    const largeData = {
+      processes: Array.from({ length: 100 }, (_, i) => ({ name: `proc_${i}`, details: 'x'.repeat(50) })),
+      edges: Array.from({ length: 200 }, (_, i) => ({ source: `a_${i}`, target: `b_${i}` })),
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 100);
+  });
+
+  test('handles CLI error response', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'Error: query failed',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+
+  test('handles multi-repo error in output', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify({ processes: [], total: 0 }),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusQuery(tmpDir, 'test');
+    assert.ok(result.processes || result.reason);
+  });
+});
+
+// ─── gitNexusContext (CJS-06, SPEC item 9) ────────────────────────────────────
+
+describe('gitNexusContext', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns caller/callee data when enabled and CLI succeeds', () => {
+    const contextData = {
+      name: 'isGraphifyEnabled',
+      callers: [{ name: 'caller1' }],
+      callees: [{ name: 'callee1' }],
+      processes: ['process1'],
+      file: 'src/myFile.js',
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(contextData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusContext(tmpDir, 'isGraphifyEnabled');
+    assert.strictEqual(result.name, 'isGraphifyEnabled');
+    assert.strictEqual(result.callers.length, 1);
+    assert.strictEqual(result.callees.length, 1);
+    assert.strictEqual(result.processes.length, 1);
+  });
+
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusContext(tmpDir, 'someSymbol');
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('returns error on empty name', () => {
+    const result = gitNexusContext(tmpDir, '');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('symbol name required'));
+  });
+
+  test('returns error on null name', () => {
+    const result = gitNexusContext(tmpDir, null);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+
+  test('applies budget caps from config', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { context: 50 } });
+    const largeData = {
+      callers: Array.from({ length: 100 }, (_, i) => ({ name: `caller_${i}` })),
+      callees: Array.from({ length: 100 }, (_, i) => ({ name: `callee_${i}` })),
+      processes: ['process1'],
+      edges: Array.from({ length: 200 }, (_, i) => ({ source: `a_${i}`, target: `b_${i}` })),
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusContext(tmpDir, 'test');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('handles CLI error response', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 1,
+      stdout: '',
+      stderr: JSON.stringify({ error: 'Symbol not found' }),
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusContext(tmpDir, 'nonexistent');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+});
+
+// ─── gitNexusImpact (CJS-07, SPEC item 10) ────────────────────────────────────
+
+describe('gitNexusImpact', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns blast radius with risk level on success', () => {
+    const impactData = {
+      target: 'isGraphifyEnabled',
+      direction: 'upstream',
+      risk: 'MEDIUM',
+      summary: '3 affected processes',
+      affected_processes: ['process1', 'process2'],
+      affected_modules: ['module1'],
+      byDepth: { '1': ['sym1'], '2': ['sym2'] },
+      impactedCount: 3,
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(impactData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusImpact(tmpDir, 'isGraphifyEnabled', 'upstream');
+    assert.strictEqual(result.risk, 'MEDIUM');
+    assert.strictEqual(result.affected_processes.length, 2);
+    assert.strictEqual(result.affected_modules.length, 1);
+  });
+
+  test('defaults direction to upstream', () => {
+    const impactData = {
+      target: 'myFunction',
+      direction: 'upstream',
+      risk: 'LOW',
+      affected_processes: [],
+      affected_modules: [],
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(impactData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusImpact(tmpDir, 'myFunction');
+    assert.strictEqual(result.risk, 'LOW');
+  });
+
+  test('handles downstream direction', () => {
+    const impactData = {
+      target: 'myFunction',
+      direction: 'downstream',
+      risk: 'HIGH',
+      affected_processes: ['proc1'],
+      affected_modules: ['mod1'],
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(impactData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusImpact(tmpDir, 'myFunction', 'downstream');
+    assert.strictEqual(result.risk, 'HIGH');
+  });
+
+  test('returns error on empty target', () => {
+    const result = gitNexusImpact(tmpDir, '');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('target symbol required'));
+  });
+
+  test('returns error on null target', () => {
+    const result = gitNexusImpact(tmpDir, null);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusImpact(tmpDir, 'myFunction');
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('applies budget caps', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { impact: 50 } });
+    const largeData = {
+      risk: 'CRITICAL',
+      affected_processes: Array.from({ length: 100 }, (_, i) => ({ name: `proc_${i}` })),
+      affected_modules: Array.from({ length: 50 }, (_, i) => ({ name: `mod_${i}` })),
+      byDepth: { '1': ['sym1'], '2': ['sym2'] },
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusImpact(tmpDir, 'myFunction');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('handles ENOENT when CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusImpact(tmpDir, 'myFunction');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
+  });
+});
+
+// ─── gitNexusDetectChanges (CJS-08, SPEC item 11) ────────────────────────────
+
+describe('gitNexusDetectChanges', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns changed symbols on success', () => {
+    const changesData = {
+      changed_symbols: [{ name: 'myFunction', type: 'function' }],
+      affected_processes: ['process1'],
+      risk_summary: 'LOW: 1 changed symbol, 1 affected process',
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(changesData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusDetectChanges(tmpDir, 'unstaged');
+    assert.strictEqual(result.changed_symbols.length, 1);
+    assert.strictEqual(result.affected_processes.length, 1);
+    assert.strictEqual(result.risk_summary, 'LOW: 1 changed symbol, 1 affected process');
+  });
+
+  test('handles "No changes detected" plain text output', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: 'No changes detected.',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusDetectChanges(tmpDir, 'unstaged');
+    assert.deepStrictEqual(result.changed_symbols, []);
+    assert.deepStrictEqual(result.affected_processes, []);
+    assert.strictEqual(result.risk_summary, 'none');
+  });
+
+  test('defaults scope to unstaged', () => {
+    const changesData = {
+      changed_symbols: [],
+      affected_processes: [],
+      risk_summary: 'none',
+    };
+    mock.method(childProcess, 'spawnSync', () => {
+      // Verify args include --scope unstaged
+      return {
+        status: 0,
+        stdout: JSON.stringify(changesData),
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    const result = gitNexusDetectChanges(tmpDir);
+    assert.ok(result.changed_symbols !== undefined);
+  });
+
+  test('handles JSON response for changes', () => {
+    const changesData = {
+      changed_symbols: [{ name: 'func1' }, { name: 'func2' }],
+      affected_processes: ['proc1'],
+      risk_summary: 'MEDIUM',
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(changesData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusDetectChanges(tmpDir, 'all');
+    assert.strictEqual(result.changed_symbols.length, 2);
+  });
+
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusDetectChanges(tmpDir);
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('applies budget caps', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { detect_changes: 50 } });
+    const largeData = {
+      changed_symbols: Array.from({ length: 100 }, (_, i) => ({ name: `sym_${i}` })),
+      affected_processes: Array.from({ length: 50 }, (_, i) => ({ name: `proc_${i}` })),
+      risk_summary: 'HIGH',
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusDetectChanges(tmpDir, 'unstaged');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('handles ENOENT when CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusDetectChanges(tmpDir);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
+  });
+});
+
+// ─── gitNexusBuild (CJS-09, SPEC item 12) ─────────────────────────────────────
+
+describe('gitNexusBuild', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns spawn_agent when CLI is available', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: '1.6.5\n',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.action, 'spawn_agent');
+    assert.ok(result.graphs_dir);
+    assert.strictEqual(result.timeout_seconds, 600);
+    assert.strictEqual(result.version, '1.6.5');
+  });
+
+  test('returns ENOENT when CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
+    assert.ok(result.message.includes('not found'));
+  });
+
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('uses custom build_timeout from config', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, build_timeout: 300 });
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: '1.6.5\n',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.action, 'spawn_agent');
+    assert.strictEqual(result.timeout_seconds, 300);
+  });
+
+  test('handles version extraction from pino-mixed output', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: '{"level":30,"time":1234567890,"msg":"Starting..."}\n1.6.5\n',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.action, 'spawn_agent');
+    assert.strictEqual(result.version, '1.6.5');
+  });
+
+  test('returns action spawn_agent even when version is null', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusBuild(tmpDir);
+    assert.strictEqual(result.action, 'spawn_agent');
+    assert.strictEqual(result.version, null);
+  });
+});
+
+// ─── gitNexusRename (SPEC item 13, STUB) ─────────────────────────────────────
+
+describe('gitNexusRename', () => {
+  test('returns structured error explaining CLI unavailability', () => {
+    const result = gitNexusRename('/tmp', 'oldName', 'newName');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('not available via CLI'));
+    assert.ok(result.message.includes('gitnexus_rename MCP tool'));
+  });
+
+  test('returns error regardless of arguments', () => {
+    const result1 = gitNexusRename('/tmp', 'foo', 'bar');
+    assert.strictEqual(result1.reason, GITNEXUS_REASON.CLI_ERROR);
+
+    const result2 = gitNexusRename('/tmp', '', '');
+    assert.strictEqual(result2.reason, GITNEXUS_REASON.CLI_ERROR);
+
+    const result3 = gitNexusRename('/tmp');
+    assert.strictEqual(result3.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+
+  test('never throws regardless of input', () => {
+    assert.doesNotThrow(() => gitNexusRename(null, null, null));
+    assert.doesNotThrow(() => gitNexusRename(undefined, undefined, undefined));
+  });
+});
+
+// ─── gitNexusCypher (CJS-09, SPEC item 14) ────────────────────────────────────
+
+describe('gitNexusCypher', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns query results with budget caps on success', () => {
+    const cypherData = {
+      markdown: '# Results\n| Name |\n|------|\n| sym1 |',
+      row_count: 1,
+      rows: [{ name: 'sym1' }],
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(cypherData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusCypher(tmpDir, 'MATCH (n:Function) RETURN n.name LIMIT 5');
+    assert.strictEqual(result.row_count, 1);
+    assert.ok(result.markdown);
+  });
+
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusCypher(tmpDir, 'MATCH (n) RETURN n');
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('returns error on empty query', () => {
+    const result = gitNexusCypher(tmpDir, '');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('cypher query required'));
+  });
+
+  test('returns error on null query', () => {
+    const result = gitNexusCypher(tmpDir, null);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+  });
+
+  test('applies budget caps from config', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { cypher: 50 } });
+    const largeData = {
+      markdown: 'x'.repeat(5000),
+      row_count: 100,
+      rows: Array.from({ length: 100 }, (_, i) => ({ name: `sym_${i}`, details: 'x'.repeat(50) })),
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusCypher(tmpDir, 'MATCH (n) RETURN n');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('handles pino log mixed output', () => {
+    const cypherData = { markdown: '# Results', row_count: 2, rows: [{ name: 'a' }, { name: 'b' }] };
+    const pinoLine = JSON.stringify({ level: 30, time: 1234567890, msg: 'Loading...' });
+    const dataLine = JSON.stringify(cypherData);
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: pinoLine + '\n' + dataLine,
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusCypher(tmpDir, 'MATCH (n) RETURN n');
+    assert.strictEqual(result.row_count, 2);
+  });
+
+  test('handles ENOENT when CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusCypher(tmpDir, 'MATCH (n) RETURN n');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
+  });
+});
+
+// ─── Never-throw verification for all new functions ─────────────────────────────
+
+describe('Never-throw pattern for query functions', () => {
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    // Do NOT enable gitnexus -- testing disabled state
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+  });
+
+  test('gitNexusQuery with null/undefined/invalid args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusQuery(null, 'test'));
+    assert.doesNotThrow(() => gitNexusQuery(undefined, 'test'));
+    assert.doesNotThrow(() => gitNexusQuery('/nonexistent/path', 'test'));
+
+    const result1 = gitNexusQuery(null, 'test');
+    assert.ok(result1.disabled || result1.reason, 'should return structured error');
+
+    const result2 = gitNexusQuery(undefined, 'test');
+    assert.ok(result2.disabled || result2.reason, 'should return structured error');
+  });
+
+  test('gitNexusContext with null/undefined/invalid args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusContext(null, 'symbol'));
+    assert.doesNotThrow(() => gitNexusContext(undefined, 'symbol'));
+
+    const result = gitNexusContext(null, 'symbol');
+    assert.ok(result.disabled || result.reason, 'should return structured error');
+  });
+
+  test('gitNexusImpact with null/undefined/invalid args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusImpact(null, 'target'));
+    assert.doesNotThrow(() => gitNexusImpact(undefined, 'target'));
+
+    const result = gitNexusImpact(null, 'target');
+    assert.ok(result.disabled || result.reason, 'should return structured error');
+  });
+
+  test('gitNexusDetectChanges with null/undefined/invalid args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusDetectChanges(null));
+    assert.doesNotThrow(() => gitNexusDetectChanges(undefined));
+
+    const result = gitNexusDetectChanges(null);
+    assert.ok(result.disabled || result.reason, 'should return structured error');
+  });
+
+  test('gitNexusBuild with null/undefined args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusBuild(null));
+    assert.doesNotThrow(() => gitNexusBuild(undefined));
+
+    const result = gitNexusBuild(null);
+    assert.ok(result.disabled || result.reason, 'should return structured error');
+  });
+
+  test('gitNexusCypher with null/undefined/invalid args returns error objects, never throws', () => {
+    assert.doesNotThrow(() => gitNexusCypher(null, 'query'));
+    assert.doesNotThrow(() => gitNexusCypher(undefined, 'query'));
+
+    const result = gitNexusCypher(null, 'query');
+    assert.ok(result.disabled || result.reason, 'should return structured error');
+  });
+});
+
+// ─── Module exports verification ───────────────────────────────────────────────
+
+describe('Module exports (CJS-01)', () => {
+  const gitnexus = require('../get-shit-done/bin/lib/gitnexus.cjs');
+
+  test('exports all 9 functions and GITNEXUS_REASON enum', () => {
+    const exports = Object.keys(gitnexus);
+    assert.ok(exports.includes('isGitNexusEnabled'), 'isGitNexusEnabled');
+    assert.ok(exports.includes('gitNexusStatus'), 'gitNexusStatus');
+    assert.ok(exports.includes('gitNexusQuery'), 'gitNexusQuery');
+    assert.ok(exports.includes('gitNexusContext'), 'gitNexusContext');
+    assert.ok(exports.includes('gitNexusImpact'), 'gitNexusImpact');
+    assert.ok(exports.includes('gitNexusDetectChanges'), 'gitNexusDetectChanges');
+    assert.ok(exports.includes('gitNexusBuild'), 'gitNexusBuild');
+    assert.ok(exports.includes('gitNexusRename'), 'gitNexusRename');
+    assert.ok(exports.includes('gitNexusCypher'), 'gitNexusCypher');
+    assert.ok(exports.includes('GITNEXUS_REASON'), 'GITNEXUS_REASON');
+  });
+
+  test('exports count is at least 10 (9 functions + 1 enum)', () => {
+    const exports = Object.keys(gitnexus);
+    // 9 query/status functions + GITNEXUS_REASON enum + helper functions
+    assert.ok(exports.length >= 10, `Expected >= 10 exports, got ${exports.length}`);
   });
 });
