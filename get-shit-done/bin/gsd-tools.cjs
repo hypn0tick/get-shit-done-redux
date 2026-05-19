@@ -446,7 +446,7 @@ async function main() {
     'config-ensure-section, config-get, config-new-project, config-path, config-set, migrate-config, ' +
     'current-timestamp, detect-custom-files, docs-init, extract-messages, find-phase, ' +
     'from-gsd2, frontmatter, gap-analysis, generate-claude-md, generate-claude-profile, ' +
-    'generate-dev-preferences, generate-slug, graphify, history-digest, init, intel, ' +
+    'generate-dev-preferences, generate-slug, gitnexus, graphify, history-digest, init, intel, ' +
     'learnings, list-todos, milestone, phase, phase-plan-index, phases, profile-questionnaire, ' +
     'profile-sample, progress, prompt-budget, requirements, resolve-model, roadmap, scaffold, state, ' +
     'template, validate, verify, verify-path-exists, verify-summary, workstream, worktree\n\n' +
@@ -1285,6 +1285,96 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
         }
       } else {
         error('Unknown graphify subcommand. Available: build, query, status, diff', ERROR_REASON.SDK_UNKNOWN_COMMAND);
+      }
+      break;
+    }
+
+    // ─── GitNexus ─────────────────────────────────────────────────────────
+
+    case 'gitnexus': {
+      const gitnexus = require('./lib/gitnexus.cjs');
+      const subcommand = args[1];
+      if (subcommand === 'status') {
+        core.output(gitnexus.gitNexusStatus(cwd), raw);
+      } else if (subcommand === 'query') {
+        const term = args[2];
+        if (!term) error('Usage: gsd-tools gitnexus query <term>', ERROR_REASON.USAGE);
+        const budgetIdx = args.indexOf('--budget');
+        const budget = budgetIdx !== -1 ? parseInt(args[budgetIdx + 1], 10) : null;
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = budget || (config.budget && config.budget.query) || 2000;
+        const result = gitnexus.execGitNexus(cwd, ['query', term, '--limit', '5'], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'query'), raw);
+        }
+      } else if (subcommand === 'context') {
+        const name = args[2];
+        if (!name) error('Usage: gsd-tools gitnexus context <symbol>', ERROR_REASON.USAGE);
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = (config.budget && config.budget.context) || 1500;
+        const result = gitnexus.execGitNexus(cwd, ['context', name], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'context'), raw);
+        }
+      } else if (subcommand === 'impact') {
+        const target = args[2];
+        if (!target) error('Usage: gsd-tools gitnexus impact <target>', ERROR_REASON.USAGE);
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = (config.budget && config.budget.impact) || 1000;
+        const direction = args[3] || 'upstream';
+        const result = gitnexus.execGitNexus(cwd, ['impact', target, '--direction', direction], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'impact'), raw);
+        }
+      } else if (subcommand === 'detect-changes') {
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = (config.budget && config.budget.detect_changes) || 500;
+        const scope = args[2] || 'all';
+        const result = gitnexus.execGitNexus(cwd, ['detect-changes', '--scope', scope], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'detect_changes'), raw);
+        }
+      } else if (subcommand === 'build') {
+        core.output(gitnexus.gitNexusStatus(cwd), raw);
+      } else if (subcommand === 'rename') {
+        const oldName = args[2];
+        const newName = args[3];
+        if (!oldName || !newName) error('Usage: gsd-tools gitnexus rename <old> <new>', ERROR_REASON.USAGE);
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = (config.budget && config.budget.rename) || 1000;
+        const result = gitnexus.execGitNexus(cwd, ['rename', oldName, newName, '--dry-run'], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'rename'), raw);
+        }
+      } else if (subcommand === 'cypher') {
+        const query = args.slice(2).join(' ');
+        if (!query) error('Usage: gsd-tools gitnexus cypher <query>', ERROR_REASON.USAGE);
+        const config = gitnexus.readGitNexusConfig(cwd);
+        const budgetTokens = (config.budget && config.budget.cypher) || 2000;
+        const result = gitnexus.execGitNexus(cwd, ['cypher', query], { config });
+        const parsed = gitnexus.parseGitNexusOutput(result.stdout, result.stderr);
+        if (!parsed.ok && parsed.data.reason) {
+          core.output(parsed.data, raw);
+        } else {
+          core.output(gitnexus.applyGitNexusBudget(parsed.data, budgetTokens, 'cypher'), raw);
+        }
+      } else {
+        error('Unknown gitnexus subcommand. Available: status, query, context, impact, detect-changes, build, rename, cypher', ERROR_REASON.SDK_UNKNOWN_COMMAND);
       }
       break;
     }

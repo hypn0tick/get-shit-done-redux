@@ -603,3 +603,57 @@ describe('Never-throw pattern', () => {
     assert.deepStrictEqual(result, {});
   });
 });
+
+// ─── CLI Dispatcher Routing (CLI-01) ────────────────────────────────────────
+
+describe('CLI dispatcher routing', () => {
+  const { runGsdTools } = require('./helpers.cjs');
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    // Enable gitnexus in config
+    enableGitNexus(planningDir);
+    // Write meta.json for status tests
+    writeMetaJson(tmpDir, SAMPLE_META);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+  });
+
+  test('gitnexus status outputs structured JSON', () => {
+    const result = runGsdTools(['gitnexus', 'status'], tmpDir);
+    assert.strictEqual(result.success, true, `Expected success but got: ${result.error || result.output}`);
+    const parsed = JSON.parse(result.output);
+    assert.strictEqual(parsed.exists, true);
+    assert.strictEqual(typeof parsed.symbols, 'number');
+    assert.strictEqual(typeof parsed.edges, 'number');
+    assert.strictEqual(typeof parsed.processes, 'number');
+  });
+
+  test('gitnexus with unknown subcommand shows error with usage message', () => {
+    const result = runGsdTools(['gitnexus', 'unknown'], tmpDir);
+    assert.strictEqual(result.success, false, 'Expected non-zero exit for unknown subcommand');
+    assert.ok(
+      result.error.includes('Unknown gitnexus subcommand') || result.error.includes('Available'),
+      `Error should mention unknown subcommand and list available ones. Got: ${result.error}`
+    );
+  });
+
+  test('gitnexus status returns disabled when gitnexus not enabled', () => {
+    // Disable gitnexus
+    const configPath = path.join(planningDir, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config.gitnexus.enabled = false;
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+    const result = runGsdTools(['gitnexus', 'status'], tmpDir);
+    assert.strictEqual(result.success, true);
+    const parsed = JSON.parse(result.output);
+    assert.strictEqual(parsed.disabled, true);
+    assert.strictEqual(parsed.reason, 'disabled');
+  });
+});
