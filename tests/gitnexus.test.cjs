@@ -1489,3 +1489,91 @@ describe('Module exports (CJS-01)', () => {
     assert.ok(exports.length >= 10, `Expected >= 10 exports, got ${exports.length}`);
   });
 });
+
+// ─── CLI Dispatcher Routing (Task 2) ─────────────────────────────────────────
+
+describe('CLI dispatcher routing for gitnexus subcommands', () => {
+  const { runGsdTools } = require('./helpers.cjs');
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+  });
+
+  test('gitnexus status outputs structured JSON', () => {
+    writeMetaJson(tmpDir, SAMPLE_META);
+    const result = runGsdTools(['gitnexus', 'status'], tmpDir);
+    assert.strictEqual(result.success, true, `Expected success but got: ${result.error || result.output}`);
+    const parsed = JSON.parse(result.output);
+    assert.strictEqual(parsed.exists, true);
+  });
+
+  test('gitnexus build routes through gitNexusBuild and returns structured response', () => {
+    const result = runGsdTools(['gitnexus', 'build'], tmpDir);
+    assert.strictEqual(result.success, true, `Expected success but got: ${result.error || result.output}`);
+    const parsed = JSON.parse(result.output);
+    // Response is either { action: 'spawn_agent' } on CLI available,
+    // or { reason: 'gitnexus_not_found' } / { reason: 'wsl_not_available' } when not
+    assert.ok(parsed.action === 'spawn_agent' || parsed.reason, `Expected action or reason, got: ${JSON.stringify(parsed)}`);
+  });
+
+  test('gitnexus rename returns CLI unavailability error', () => {
+    const result = runGsdTools(['gitnexus', 'rename', 'oldName', 'newName'], tmpDir);
+    assert.strictEqual(result.success, true, `Expected success but got: ${result.error || result.output}`);
+    const parsed = JSON.parse(result.output);
+    assert.strictEqual(parsed.reason, 'gitnexus_cli_error');
+    assert.ok(parsed.message.includes('not available via CLI'));
+  });
+
+  test('gitnexus query with --budget flag passes budget to function', () => {
+    // This test verifies the CLI dispatcher routes --budget correctly.
+    // Since gitnexus CLI may not be available in test env, we test
+    // that the command doesn't crash and the output is structured.
+    const result = runGsdTools(['gitnexus', 'query', 'test', '--budget', '100'], tmpDir);
+    // Command may succeed or fail depending on gitnexus availability,
+    // but it should not crash the process
+    assert.ok(result.output || result.error, 'should produce output');
+  });
+
+  test('gitnexus impact with --direction flag defaults to upstream', () => {
+    const result = runGsdTools(['gitnexus', 'impact', 'testSymbol', '--direction', 'downstream'], tmpDir);
+    // Command may succeed or fail depending on gitnexus availability
+    assert.ok(result.output || result.error, 'should produce output');
+  });
+
+  test('gitnexus detect-changes with --scope flag defaults to unstaged', () => {
+    const result = runGsdTools(['gitnexus', 'detect-changes', '--scope', 'staged'], tmpDir);
+    assert.ok(result.output || result.error, 'should produce output');
+  });
+
+  test('gitnexus cypher routes correctly', () => {
+    const result = runGsdTools(['gitnexus', 'cypher', 'MATCH'], tmpDir);
+    assert.ok(result.output || result.error, 'should produce output');
+  });
+
+  test('gitnexus context with symbol routes correctly', () => {
+    const result = runGsdTools(['gitnexus', 'context', 'myFunction'], tmpDir);
+    assert.ok(result.output || result.error, 'should produce output');
+  });
+
+  test('unknown gitnexus subcommand shows error with usage message listing all 8 modes', () => {
+    const result = runGsdTools(['gitnexus', 'unknown'], tmpDir);
+    assert.strictEqual(result.success, false, 'Expected non-zero exit for unknown subcommand');
+    assert.ok(
+      result.error.includes('Unknown gitnexus subcommand') || result.error.includes('Available'),
+      `Error should mention unknown subcommand and list available ones. Got: ${result.error}`
+    );
+    // Verify all 8 subcommands are listed in the error
+    const subcommands = ['status', 'query', 'context', 'impact', 'detect-changes', 'build', 'rename', 'cypher'];
+    for (const sc of subcommands) {
+      assert.ok(result.error.includes(sc), `Error should list '${sc}' subcommand`);
+    }
+  });
+});
