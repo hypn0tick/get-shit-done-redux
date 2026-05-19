@@ -71,5 +71,20 @@
   "graphify": {
     "auto_update": false
   },
+  "gitnexus": {
+    "enabled": false,
+    "use_wsl": "auto",
+    "cli_path": "gitnexus",
+    "auto_update": false,
+    "skills": false,
+    "budget": {
+      "query": 2000,
+      "context": 1500,
+      "impact": 1000,
+      "detect_changes": 500,
+      "rename": 1000,
+      "cypher": 2000
+    }
+  },
   "agent_skills": {}
 }
