@@ -44,6 +44,7 @@ export const COMMAND_DEFINITIONS_BY_FAMILY: Readonly<Record<CommandFamily, reado
   phases: byFamily('phases'),
   validate: byFamily('validate'),
   roadmap: byFamily('roadmap'),
+  gitnexus: byFamily('gitnexus'),
 } as const;
 
 export const COMMAND_DEFINITION_BY_CANONICAL: Readonly<Record<string, CommandDefinition>> = Object.fromEntries(

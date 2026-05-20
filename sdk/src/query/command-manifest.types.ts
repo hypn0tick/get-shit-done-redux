@@ -1,4 +1,4 @@
-export type CommandFamily = 'state' | 'verify' | 'init' | 'phase' | 'phases' | 'validate' | 'roadmap';
+export type CommandFamily = 'state' | 'verify' | 'init' | 'phase' | 'phases' | 'validate' | 'roadmap' | 'gitnexus';
 
 export type OutputMode = 'json' | 'raw';
 

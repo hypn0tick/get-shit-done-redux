@@ -167,6 +167,24 @@ grep -rn "return null\|return \[\]\|return {}" src/ --include="*.ts" --include="
 Read key files identified during exploration. Use Glob and Grep liberally.
 </step>
 
+<step name="load_code_intelligence">
+Gather supplementary GitNexus context when available:
+
+```bash
+GN_STATUS=$(gsd-sdk query gitnexus.status 2>/dev/null || echo "{}")
+if echo "$GN_STATUS" | grep -Eq '"exists"\s*:\s*true'; then
+  gsd-sdk query gitnexus.query "architecture"
+  gsd-sdk query gitnexus.query "dependency"
+  GN_REPLACE=$(gsd-sdk query config-get gitnexus.replace_grep_exploration 2>/dev/null || echo "false")
+  if [ "$GN_REPLACE" = "true" ]; then
+    echo "GitNexus replace_grep_exploration=true; prefer GitNexus clusters/processes for exploration context"
+  fi
+else
+  echo "GitNexus disabled, using grep/glob exploration only"
+fi
+```
+</step>
+
 <step name="write_documents">
 Write document(s) to `.planning/codebase/` using the templates below.
 

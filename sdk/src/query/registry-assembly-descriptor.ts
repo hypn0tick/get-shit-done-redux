@@ -60,6 +60,7 @@ export const ALIAS_GROUPS: readonly RegistryAssemblyAliasGroup[] = [
   buildAliasGroup('phase'),
   buildAliasGroup('phases'),
   buildAliasGroup('init'),
+  buildAliasGroup('gitnexus'),
 ] as const;
 
 export const STATIC_GROUP_BY_NAME = Object.fromEntries(
@@ -83,5 +84,6 @@ export const REGISTRY_ASSEMBLY_PLAN: readonly RegistryAssemblyStep[] = [
   { kind: 'alias', key: 'phase' },
   { kind: 'alias', key: 'phases' },
   { kind: 'alias', key: 'init' },
+  { kind: 'alias', key: 'gitnexus' },
   { kind: 'static', key: 'DOMAIN_STATIC_CATALOG' },
 ] as const;

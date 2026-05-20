@@ -5,6 +5,7 @@ import { PHASE_COMMAND_MANIFEST } from './command-manifest.phase.js';
 import { PHASES_COMMAND_MANIFEST } from './command-manifest.phases.js';
 import { VALIDATE_COMMAND_MANIFEST } from './command-manifest.validate.js';
 import { ROADMAP_COMMAND_MANIFEST } from './command-manifest.roadmap.js';
+import { GITNEXUS_COMMAND_MANIFEST } from './command-manifest.gitnexus.js';
 
 export const COMMAND_MANIFEST = [
   ...STATE_COMMAND_MANIFEST,
@@ -14,4 +15,5 @@ export const COMMAND_MANIFEST = [
   ...PHASES_COMMAND_MANIFEST,
   ...VALIDATE_COMMAND_MANIFEST,
   ...ROADMAP_COMMAND_MANIFEST,
+  ...GITNEXUS_COMMAND_MANIFEST,
 ] as const;

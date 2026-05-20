@@ -1319,27 +1319,83 @@ describe('gitNexusBuild', () => {
 // ─── gitNexusRename (SPEC item 13, STUB) ─────────────────────────────────────
 
 describe('gitNexusRename', () => {
-  test('returns structured error explaining CLI unavailability', () => {
-    const result = gitNexusRename('/tmp', 'oldName', 'newName');
+  let tmpDir;
+  let planningDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    planningDir = path.join(tmpDir, '.planning');
+    enableGitNexus(planningDir);
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+    mock.restoreAll();
+  });
+
+  test('returns graph-backed result on success', () => {
+    const renameData = { graph_edits: [{ file: 'a.ts', edits: 1 }], confidence: 0.9 };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(renameData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName');
+    assert.ok(Array.isArray(result.graph_edits));
+  });
+
+  test('returns error when current symbol name is missing', () => {
+    const result = gitNexusRename(tmpDir, '', 'newName');
     assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
-    assert.ok(result.message.includes('not available via CLI'));
-    assert.ok(result.message.includes('gitnexus_rename MCP tool'));
+    assert.ok(result.message.includes('current symbol name required'));
   });
 
-  test('returns error regardless of arguments', () => {
-    const result1 = gitNexusRename('/tmp', 'foo', 'bar');
-    assert.strictEqual(result1.reason, GITNEXUS_REASON.CLI_ERROR);
-
-    const result2 = gitNexusRename('/tmp', '', '');
-    assert.strictEqual(result2.reason, GITNEXUS_REASON.CLI_ERROR);
-
-    const result3 = gitNexusRename('/tmp');
-    assert.strictEqual(result3.reason, GITNEXUS_REASON.CLI_ERROR);
+  test('returns error when new symbol name is missing', () => {
+    const result = gitNexusRename(tmpDir, 'oldName', '');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
+    assert.ok(result.message.includes('new symbol name required'));
   });
 
-  test('never throws regardless of input', () => {
-    assert.doesNotThrow(() => gitNexusRename(null, null, null));
-    assert.doesNotThrow(() => gitNexusRename(undefined, undefined, undefined));
+  test('returns disabled response when gitnexus not enabled', () => {
+    writeGitNexusConfig(planningDir, { enabled: false });
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName');
+    assert.strictEqual(result.disabled, true);
+  });
+
+  test('applies rename budget caps', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, budget: { rename: 50 } });
+    const largeData = {
+      confidence: 0.9,
+      text_search_edits: Array.from({ length: 100 }, (_, i) => ({ file: `f${i}.ts` })),
+      graph_edits: Array.from({ length: 100 }, (_, i) => ({ file: `g${i}.ts` })),
+    };
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 0,
+      stdout: JSON.stringify(largeData),
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName');
+    assert.strictEqual(result.truncated, true);
+    assert.strictEqual(result.budget_limit, 50);
+  });
+
+  test('handles ENOENT when CLI not found', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: { code: 'ENOENT' },
+      signal: null,
+    }));
+
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName');
+    assert.strictEqual(result.reason, GITNEXUS_REASON.ENOENT);
   });
 });
 
@@ -1575,12 +1631,11 @@ describe('CLI dispatcher routing for gitnexus subcommands', () => {
     assert.ok(parsed.action === 'spawn_agent' || parsed.reason, `Expected action or reason, got: ${JSON.stringify(parsed)}`);
   });
 
-  test('gitnexus rename returns CLI unavailability error', () => {
+  test('gitnexus rename routes through rename implementation', () => {
     const result = runGsdTools(['gitnexus', 'rename', 'oldName', 'newName'], tmpDir);
     assert.strictEqual(result.success, true, `Expected success but got: ${result.error || result.output}`);
     const parsed = JSON.parse(result.output);
-    assert.strictEqual(parsed.reason, 'gitnexus_cli_error');
-    assert.ok(parsed.message.includes('not available via CLI'));
+    assert.ok(parsed.reason || parsed.graph_edits || parsed.text_search_edits);
   });
 
   test('gitnexus query with --budget flag passes budget to function', () => {

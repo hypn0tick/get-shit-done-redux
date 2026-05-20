@@ -36,6 +36,16 @@ import {
   initListWorkspaces, initRemoveWorkspace,
 } from './init.js';
 import { initNewProject, initProgress, initManager } from './init-complex.js';
+import {
+  gitnexusStatusHandler,
+  gitnexusQueryHandler,
+  gitnexusContextHandler,
+  gitnexusImpactHandler,
+  gitnexusDetectChangesHandler,
+  gitnexusBuildHandler,
+  gitnexusRenameHandler,
+  gitnexusCypherHandler,
+} from './handler-gitnexus.js';
 
 export const FAMILY_HANDLERS: Record<string, Readonly<Record<string, QueryHandler>>> = {
   state: {
@@ -119,5 +129,15 @@ export const FAMILY_HANDLERS: Record<string, Readonly<Record<string, QueryHandle
     'init.new-workspace': initNewWorkspace,
     'init.list-workspaces': initListWorkspaces,
     'init.remove-workspace': initRemoveWorkspace,
+  },
+  gitnexus: {
+    'gitnexus.status': gitnexusStatusHandler,
+    'gitnexus.query': gitnexusQueryHandler,
+    'gitnexus.context': gitnexusContextHandler,
+    'gitnexus.impact': gitnexusImpactHandler,
+    'gitnexus.detect-changes': gitnexusDetectChangesHandler,
+    'gitnexus.build': gitnexusBuildHandler,
+    'gitnexus.rename': gitnexusRenameHandler,
+    'gitnexus.cypher': gitnexusCypherHandler,
   },
 };

@@ -407,6 +407,22 @@ For each finding, extract:
 Record `findings_in_scope` for REVIEW-FIX.md frontmatter.
 </step>
 
+<step name="blast_radius_check">
+Before applying each fix, check blast radius when GitNexus is available:
+
+```bash
+GN_STATUS=$(gsd-sdk query gitnexus.status 2>/dev/null || echo "{}")
+if echo "$GN_STATUS" | grep -Eq '"exists"\s*:\s*true'; then
+  gsd-sdk query gitnexus.context "<symbol-name>"
+  gsd-sdk query gitnexus.impact "<symbol-name>" --direction upstream
+else
+  echo "GitNexus disabled, skipping blast radius check"
+fi
+```
+
+Use context/impact output to inform fix strategy; continue applying fixes regardless.
+</step>
+
 <step name="apply_fixes">
 For each finding in sorted order:
 

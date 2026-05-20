@@ -406,6 +406,20 @@ The verb owns the canonical predicate (tdd="true" frontmatter AND `<behavior>` b
 
 **Mode is all-or-nothing per phase** (PRD decision Q1, inherited from Phase 1). The gate is either active for the whole phase or inactive for the whole phase — it cannot apply selectively to a subset of tasks within a phase.
 
+<step name="detect_changes">
+Run before each commit protocol:
+
+```bash
+GN_STATUS=$(gsd-sdk query gitnexus.status 2>/dev/null || echo "{}")
+if echo "$GN_STATUS" | grep -Eq '"exists"\s*:\s*true'; then
+  gsd-sdk query gitnexus.detect-changes --scope unstaged
+  # If unexpected symbols/processes appear, investigate before committing.
+else
+  echo "GitNexus disabled, skipping detect-changes"
+fi
+```
+</step>
+
 <task_commit_protocol>
 After each task completes (verification passed, done criteria met), commit immediately.
 

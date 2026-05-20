@@ -1,6 +1,6 @@
 /**
- * GENERATED FILE — command alias expansion for state.*, verify.*, init.*, phase.*, phases.*, validate.*, roadmap.*, and non-family commands.
- * Source: sdk/src/query/command-manifest.{state,verify,init,phase,phases,validate,roadmap,non-family}.ts
+ * GENERATED FILE - command alias expansion for state.*, verify.*, init.*, phase.*, phases.*, validate.*, roadmap.*, gitnexus.*, and non-family commands.
+ * Source: sdk/src/query/command-manifest.{state,verify,init,phase,phases,validate,roadmap,gitnexus,non-family}.ts
  */
 
 export interface FamilyCommandAlias {
@@ -97,6 +97,17 @@ export const ROADMAP_COMMAND_ALIASES: readonly FamilyCommandAlias[] = [
   { canonical: 'roadmap.annotate-dependencies', aliases: ['roadmap annotate-dependencies'], subcommand: 'annotate-dependencies', mutation: true },
 ] as const;
 
+export const GITNEXUS_COMMAND_ALIASES: readonly FamilyCommandAlias[] = [
+  { canonical: 'gitnexus.status', aliases: ['gitnexus status'], subcommand: 'status', mutation: false },
+  { canonical: 'gitnexus.query', aliases: ['gitnexus query'], subcommand: 'query', mutation: false },
+  { canonical: 'gitnexus.context', aliases: ['gitnexus context'], subcommand: 'context', mutation: false },
+  { canonical: 'gitnexus.impact', aliases: ['gitnexus impact'], subcommand: 'impact', mutation: false },
+  { canonical: 'gitnexus.detect-changes', aliases: ['gitnexus detect-changes'], subcommand: 'detect-changes', mutation: false },
+  { canonical: 'gitnexus.build', aliases: ['gitnexus build'], subcommand: 'build', mutation: false },
+  { canonical: 'gitnexus.rename', aliases: ['gitnexus rename'], subcommand: 'rename', mutation: true },
+  { canonical: 'gitnexus.cypher', aliases: ['gitnexus cypher'], subcommand: 'cypher', mutation: false },
+] as const;
+
 export interface NonFamilyCommandAlias {
   canonical: string;
   aliases: string[];
@@ -152,3 +163,4 @@ export const PHASE_SUBCOMMANDS = new Set<string>(PHASE_COMMAND_ALIASES.map((entr
 export const PHASES_SUBCOMMANDS = new Set<string>(PHASES_COMMAND_ALIASES.map((entry) => entry.subcommand));
 export const VALIDATE_SUBCOMMANDS = new Set<string>(VALIDATE_COMMAND_ALIASES.map((entry) => entry.subcommand));
 export const ROADMAP_SUBCOMMANDS = new Set<string>(ROADMAP_COMMAND_ALIASES.map((entry) => entry.subcommand));
+export const GITNEXUS_SUBCOMMANDS = new Set<string>(GITNEXUS_COMMAND_ALIASES.map((entry) => entry.subcommand));

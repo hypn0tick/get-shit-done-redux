@@ -877,40 +877,27 @@ If exists, load relevant documents by phase type:
 | (default) | STACK.md, ARCHITECTURE.md |
 </step>
 
-<step name="load_graph_context">
-Check for knowledge graph:
+<step name="load_code_intelligence">
+Use GitNexus first, then graphify fallback:
 
 ```bash
-ls .planning/graphs/graph.json 2>/dev/null
+GN_STATUS=$(gsd-sdk query gitnexus.status 2>/dev/null || echo "{}")
+if echo "$GN_STATUS" | grep -Eq '"exists"\s*:\s*true'; then
+  gsd-sdk query gitnexus.query "<phase-goal-keyword>"
+  # Optional deepening when a concrete symbol/target is known:
+  # gsd-sdk query gitnexus.context "<symbol>"
+  # gsd-sdk query gitnexus.impact "<target>" --direction upstream
+else
+  echo "GitNexus disabled, using graphify"
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify status
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify query "<phase-goal-keyword>" --budget 2000
+fi
 ```
 
-If graph.json exists, check freshness:
-
-```bash
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify status
-```
-
-If the status response has `stale: true`, note for later: "Graph is {age_hours}h old -- treat semantic relationships as approximate." Include this annotation inline with any graph context injected below.
-
-Query the graph for phase-relevant dependency context (single query per D-06):
-
-```bash
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify query "<phase-goal-keyword>" --budget 2000
-```
-
-(graphify is not exposed on `gsd-sdk query` yet; use `gsd-tools.cjs` for graphify only.)
-
-Use the keyword that best captures the phase goal. Examples:
-- Phase "User Authentication" -> query term "auth"
-- Phase "Payment Integration" -> query term "payment"
-- Phase "Database Migration" -> query term "migration"
-
-If the query returns nodes and edges, incorporate as dependency context for planning:
-- Which modules/files are semantically related to this phase's domain
+If intelligence results are available, incorporate them as dependency context for planning:
+- Which modules/files are related to this phase
 - Which subsystems may be affected by changes in this phase
 - Cross-document relationships that inform task ordering and wave structure
-
-If no results or graph.json absent, continue without graph context.
 </step>
 
 <step name="identify_phase">

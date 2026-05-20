@@ -723,24 +723,46 @@ function gitNexusBuild(cwd) {
 
 /**
  * Rename a symbol across the codebase using graph-backed edits.
- * STUB: gitnexus rename is not available via CLI (RESEARCH A7).
- * Returns a structured error directing callers to the MCP tool.
- * Full rename functionality deferred to Phase 2 SDK integration.
+ * Invokes `gitnexus rename <symbolName> <newSymbolName>` via execGitNexus.
  * Never throws (CJS-02).
  *
  * @param {string} cwd - Working directory
  * @param {string} symbolName - Current symbol name
  * @param {string} newSymbolName - New symbol name
- * @param {{ budget?: number|null }} [options={}] - Options (unused in stub)
+ * @param {{ budget?: number|null }} [options={}] - Options
  * @returns {object}
  */
 function gitNexusRename(cwd, symbolName, newSymbolName, options = {}) {
-  // STUB: rename is not available via CLI; use gitnexus_rename MCP tool directly
-  // Full rename functionality (via MCP tool invocation) deferred to Phase 2
-  return {
-    reason: GITNEXUS_REASON.CLI_ERROR,
-    message: 'rename is not available via CLI; use gitnexus_rename MCP tool directly',
-  };
+  try {
+    const planningDir = path.join(cwd, '.planning');
+    if (!isGitNexusEnabled(planningDir)) return disabledResponse();
+
+    if (!symbolName) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'current symbol name required' };
+    }
+
+    if (!newSymbolName) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: 'new symbol name required' };
+    }
+
+    const config = readGitNexusConfig(cwd);
+    const repoName = path.basename(cwd);
+    const result = execGitNexus(cwd, ['rename', symbolName, newSymbolName, '--repo', repoName], { config });
+
+    if (result.reason !== GITNEXUS_REASON.OK) {
+      return { reason: result.reason, message: result.stderr || 'gitnexus rename failed' };
+    }
+
+    const parsed = parseGitNexusOutput(result.stdout, result.stderr);
+    if (!parsed.ok) {
+      return { reason: GITNEXUS_REASON.CLI_ERROR, message: parsed.data.message || 'Failed to parse gitnexus rename output' };
+    }
+
+    const budget = options.budget || (config.budget && config.budget.rename) || 1000;
+    return applyGitNexusBudget(parsed.data, budget, 'rename');
+  } catch (e) {
+    return { reason: GITNEXUS_REASON.CLI_ERROR, message: e.message };
+  }
 }
 
 /**

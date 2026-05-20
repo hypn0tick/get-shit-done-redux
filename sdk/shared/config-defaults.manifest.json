@@ -84,7 +84,9 @@
       "detect_changes": 500,
       "rename": 1000,
       "cypher": 2000
-    }
+    },
+    "replace_grep_exploration": false,
+    "embeddings": "auto"
   },
   "agent_skills": {}
 }

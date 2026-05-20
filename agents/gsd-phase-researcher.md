@@ -621,26 +621,21 @@ cat "$phase_dir"/*-CONTEXT.md 2>/dev/null
 - User decided "simple UI, no animations" → don't research animation libraries
 - Marked as Claude's discretion → research options and recommend
 
-## Step 1.3: Load Graph Context
+## Step 1.3: Load Code Intelligence
 
-Check for knowledge graph:
-
-```bash
-ls .planning/graphs/graph.json 2>/dev/null
-```
-
-If graph.json exists, check freshness:
+Check GitNexus first:
 
 ```bash
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify status
-```
-
-If the status response has `stale: true`, note for later: "Graph is {age_hours}h old -- treat semantic relationships as approximate." Include this annotation inline with any graph context injected below.
-
-Query the graph for each major capability in the phase scope (2-3 queries per D-05, discovery-focused):
-
-```bash
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify query "<capability-keyword>" --budget 1500
+GN_STATUS=$(gsd-sdk query gitnexus.status 2>/dev/null || echo "{}")
+if echo "$GN_STATUS" | grep -Eq '"exists"\s*:\s*true'; then
+  gsd-sdk query gitnexus.query "<capability-keyword-1>"
+  gsd-sdk query gitnexus.query "<capability-keyword-2>"
+  gsd-sdk query gitnexus.query "<capability-keyword-3>"
+else
+  echo "GitNexus disabled, using graphify"
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify status
+  node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" graphify query "<capability-keyword>" --budget 1500
+fi
 ```
 
 Derive query terms from the phase goal and requirement descriptions. Examples:
@@ -648,13 +643,13 @@ Derive query terms from the phase goal and requirement descriptions. Examples:
 - Phase "payment integration" -> query "payment", "billing"
 - Phase "build pipeline" -> query "build", "compile"
 
-Use graph results to:
+Use code intelligence results to:
 - Discover non-obvious cross-document relationships (e.g., a config file related to an API module)
 - Identify architectural boundaries that affect the phase
 - Surface dependencies the phase description does not explicitly mention
 - Inform which subsystems to investigate more deeply in subsequent research steps
 
-If no results or graph.json absent, continue to Step 1.5 without graph context.
+If no results are available, continue to Step 1.5.
 
 ## Step 1.5: Architectural Responsibility Mapping
 
