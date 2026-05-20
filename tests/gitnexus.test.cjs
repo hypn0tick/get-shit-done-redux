@@ -67,6 +67,16 @@ function writeMetaJson(cwd, data) {
   );
 }
 
+function writeGitNexusBuildStatus(cwd, data) {
+  const gitNexusDir = path.join(cwd, '.gitnexus');
+  fs.mkdirSync(gitNexusDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(gitNexusDir, '.last-build-status.json'),
+    typeof data === 'string' ? data : JSON.stringify(data, null, 2),
+    'utf8'
+  );
+}
+
 const SAMPLE_META = {
   repoPath: '/Projects/AI/Git/get-shit-done',
   lastCommit: 'abc1234',
@@ -662,6 +672,44 @@ describe('gitNexusStatus', () => {
 
     const result = gitNexusStatus(tmpDir);
     assert.strictEqual(result.auto_update, false);
+  });
+
+  test('returns rebuild_status from .gitnexus/.last-build-status.json', () => {
+    enableGitNexus(planningDir);
+    writeMetaJson(tmpDir, SAMPLE_META);
+    writeGitNexusBuildStatus(tmpDir, {
+      ts: '2026-05-20T12:34:56Z',
+      status: 'ok',
+      exit_code: 0,
+      duration_ms: 1234,
+      head_at_build: 'abcdef0',
+    });
+
+    const result = gitNexusStatus(tmpDir);
+    assert.deepStrictEqual(result.rebuild_status, {
+      ts: '2026-05-20T12:34:56Z',
+      status: 'ok',
+      exit_code: 0,
+      duration_ms: 1234,
+      head_at_build: 'abcdef0',
+    });
+  });
+
+  test('returns rebuild_status:null when status file is absent', () => {
+    enableGitNexus(planningDir);
+    writeMetaJson(tmpDir, SAMPLE_META);
+
+    const result = gitNexusStatus(tmpDir);
+    assert.strictEqual(result.rebuild_status, null);
+  });
+
+  test('returns rebuild_status:null when status file is malformed', () => {
+    enableGitNexus(planningDir);
+    writeMetaJson(tmpDir, SAMPLE_META);
+    writeGitNexusBuildStatus(tmpDir, '{{{not json');
+
+    const result = gitNexusStatus(tmpDir);
+    assert.strictEqual(result.rebuild_status, null);
   });
 });
 
