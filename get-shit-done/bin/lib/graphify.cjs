@@ -170,7 +170,7 @@ function checkGraphifyVersion() {
 
 /**
  * Safely read and parse a JSON file. Returns null on missing file or parse error.
- * Prevents crashes on malformed JSON (T-02-01 mitigation).
+ * Prevents crashes on malformed JSON from local graph metadata.
  *
  * @param {string} filePath - Absolute path to JSON file
  * @returns {object|null}
