@@ -280,9 +280,12 @@ function execGitNexus(cwd, args, options = {}) {
     }
 
     if (result.exitCode !== 0) {
+      // WSL command executed but failed with a non-zero exit code
+      // (not ENOENT, not distro-missing, not timeout) — produce WSL_COMMAND_FAILED
       return {
         ...result,
-        reason: GITNEXUS_REASON.CLI_ERROR,
+        reason: GITNEXUS_REASON.WSL_COMMAND_FAILED,
+        stderr: result.stderr || 'WSL command failed with exit code ' + result.exitCode,
       };
     }
 

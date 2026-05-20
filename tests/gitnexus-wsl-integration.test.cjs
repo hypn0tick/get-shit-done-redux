@@ -262,6 +262,57 @@ describeWsl('WSL integration - error codes (WSL-04)', () => {
     assert.strictEqual(result.reason, GITNEXUS_REASON.WSL_DISTRO_MISSING);
     mock.restoreAll();
   });
+
+  test('WSL_COMMAND_FAILED returned when WSL command exits non-zero without distro error', () => {
+    // When WSL is available (no ENOENT), a distro is present (no "no installed" or
+    // "no distributions" in stderr), and the command exits with a non-zero code,
+    // execGitNexus must return WSL_COMMAND_FAILED — not the generic CLI_ERROR.
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'command not found: gitnexus',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = execGitNexus('/tmp', ['status'], { config: { use_wsl: true }, platform: 'win32' });
+    assert.strictEqual(result.reason, GITNEXUS_REASON.WSL_COMMAND_FAILED, 'should return WSL_COMMAND_FAILED for non-zero WSL exit without distro error');
+    assert.strictEqual(result.exitCode, 1, 'should preserve original exit code');
+    assert.ok(result.stderr.includes('command not found: gitnexus'), `stderr should contain original error, got: ${result.stderr}`);
+    mock.restoreAll();
+  });
+
+  test('WSL_COMMAND_FAILED returned for non-zero exit with empty stderr', () => {
+    // Even with empty stderr, a non-zero exit from WSL (that is not distro-missing)
+    // must produce WSL_COMMAND_FAILED, not CLI_ERROR.
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 2,
+      stdout: '',
+      stderr: '',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = execGitNexus('/tmp', ['status'], { config: { use_wsl: true }, platform: 'win32' });
+    assert.strictEqual(result.reason, GITNEXUS_REASON.WSL_COMMAND_FAILED, 'should return WSL_COMMAND_FAILED even with empty stderr');
+    assert.strictEqual(result.exitCode, 2);
+    mock.restoreAll();
+  });
+
+  test('WSL_COMMAND_FAILED includes diagnostic stderr message', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 127,
+      stdout: '',
+      stderr: 'bash: gitnexus: command not found',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = execGitNexus('/tmp', ['query', 'test'], { config: { use_wsl: true }, platform: 'win32' });
+    assert.strictEqual(result.reason, GITNEXUS_REASON.WSL_COMMAND_FAILED);
+    assert.ok(result.stderr, 'should include stderr for diagnostics');
+    mock.restoreAll();
+  });
 });
 
 // ─── d. Real WSL invocation (WSL-01) ──────────────────────────────────────────
