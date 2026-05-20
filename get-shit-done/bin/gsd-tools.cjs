@@ -507,7 +507,7 @@ async function main() {
     fs.writeSync = function (fd, data, ...rest) {
       if (fd === 1) {
         captured += String(data);
-        return;
+        return Buffer.byteLength(String(data), 'utf-8');
       }
       return origWriteSync.call(fs, fd, data, ...rest);
     };
@@ -546,7 +546,7 @@ async function main() {
   fs.writeSync = function (fd, data, ...rest) {
     if (fd === 1) {
       captured += String(data);
-      return;
+      return Buffer.byteLength(String(data), 'utf-8');
     }
     return origWriteSync2.call(fs, fd, data, ...rest);
   };
