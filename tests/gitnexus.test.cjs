@@ -499,6 +499,57 @@ describe('execGitNexus', () => {
     const result = execGitNexus('/tmp', ['status'], { config, platform: 'win32' });
     assert.strictEqual(result.reason, GITNEXUS_REASON.WSL_DISTRO_MISSING);
   });
+
+  // WSL-01: cwd must be Windows path (not WSL path) when routing through WSL
+
+  test('passes Windows cwd to spawnSync when useWsl is true', () => {
+    const calls = [];
+    mock.method(childProcess, 'spawnSync', (...args) => {
+      calls.push(args);
+      return {
+        status: 0,
+        stdout: JSON.stringify({ processes: [] }),
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    execGitNexus('C:\\Projects\\test', ['status'], { config: { use_wsl: true }, platform: 'win32' });
+
+    // With use_wsl: true, resolveWslSetting returns true immediately (no auto-detect call),
+    // so there is exactly one spawnSync call for the gitnexus invocation via WSL.
+    assert.strictEqual(calls.length, 1, 'Expected exactly one spawnSync call');
+    const [program, args, options] = calls[0];
+    assert.strictEqual(program, 'wsl');
+    // The cwd must be the Windows path, NOT a /mnt/c/... WSL path.
+    // Node.js spawnSync on Windows cannot resolve Unix-style paths as cwd.
+    assert.strictEqual(options.cwd, 'C:\\Projects\\test');
+  });
+
+  test('translates file-path arguments to WSL paths while keeping cwd as Windows path', () => {
+    const calls = [];
+    mock.method(childProcess, 'spawnSync', (...args) => {
+      calls.push(args);
+      return {
+        status: 0,
+        stdout: JSON.stringify({ processes: [] }),
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    execGitNexus('C:\\Projects\\test', ['query', 'C:\\data\\file.txt'], { config: { use_wsl: true }, platform: 'win32' });
+
+    assert.strictEqual(calls.length, 1, 'Expected exactly one spawnSync call');
+    const [program, args, options] = calls[0];
+    assert.strictEqual(program, 'wsl');
+    // cwd must remain as Windows path
+    assert.strictEqual(options.cwd, 'C:\\Projects\\test');
+    // file path argument should be translated to WSL path format
+    assert.ok(args.includes('/mnt/c/data/file.txt'), 'File path arguments should be translated to WSL paths');
+  });
 });
 
 // ─── gitNexusStatus (CJS-04, SPEC item 7) ───────────────────────────────────

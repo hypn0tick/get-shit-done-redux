@@ -222,8 +222,11 @@ function execGitNexus(cwd, args, options = {}) {
   const timeout = options.timeout ?? 30000;
 
   if (useWsl) {
-    // Route through WSL on Windows
-    const wslCwd = windowsToWslPath(cwd);
+    // Route through WSL on Windows.
+    // The cwd must be a Windows path (e.g. "C:\Projects\test") because Node.js
+    // spawnSync on Windows cannot resolve a Unix-style /mnt/c/... path as cwd.
+    // WSL.exe handles path translation internally — it receives the Windows cwd
+    // and translates it for the Linux process.
     const wslArgs = args.map(a => {
       // Translate file path arguments (heuristic: starts with drive letter)
       if (/^[A-Za-z]:[\\/]/.test(a)) return windowsToWslPath(a);
@@ -231,7 +234,7 @@ function execGitNexus(cwd, args, options = {}) {
     });
 
     const result = execTool('wsl', ['gitnexus', ...wslArgs], {
-      cwd: wslCwd,
+      cwd,
       timeout,
     });
 
