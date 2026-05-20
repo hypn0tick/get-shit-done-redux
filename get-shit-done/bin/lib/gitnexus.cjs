@@ -276,9 +276,13 @@ function execGitNexus(cwd, args, options = {}) {
       const data = parsed.data;
       if (data && typeof data === 'object' && data.error &&
           typeof data.error === 'string' && data.error.includes('Multiple repositories indexed')) {
-        // Retry with --repo flag using project directory basename
-        const repoName = path.basename(cwd);
-        return execGitNexus(cwd, ['--repo', repoName, ...args], { ...options, config });
+        // Guard against unbounded recursion: if --repo is already in args, do not retry.
+        if (args.includes('--repo')) {
+          // Already retried with --repo; fall through to normal result handling.
+        } else {
+          const repoName = path.basename(cwd);
+          return execGitNexus(cwd, ['--repo', repoName, ...args], { ...options, config });
+        }
       }
     }
 
@@ -331,8 +335,13 @@ function execGitNexus(cwd, args, options = {}) {
     const data = parsed.data;
     if (data && typeof data === 'object' && data.error &&
         typeof data.error === 'string' && data.error.includes('Multiple repositories indexed')) {
-      const repoName = path.basename(cwd);
-      return execGitNexus(cwd, ['--repo', repoName, ...args], { ...options, config });
+      // Guard against unbounded recursion: if --repo is already in args, do not retry.
+      if (args.includes('--repo')) {
+        // Already retried with --repo; fall through to normal result handling.
+      } else {
+        const repoName = path.basename(cwd);
+        return execGitNexus(cwd, ['--repo', repoName, ...args], { ...options, config });
+      }
     }
   }
 
