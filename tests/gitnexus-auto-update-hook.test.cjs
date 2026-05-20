@@ -267,7 +267,7 @@ describe('GitNexus hook no-op gates', () => {
 
     const liveLockRepo = createTempGitRepo({ config: makeConfig() });
     t.after(() => cleanup(liveLockRepo));
-    const liveMock = makeMockGitNexusPath(liveLockRepo, { sleepMs: 10000 });
+    const liveMock = makeMockGitNexusPath(liveLockRepo, { sleepMs: 30000 });
     const first = runHook(
       liveLockRepo,
       { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } },
