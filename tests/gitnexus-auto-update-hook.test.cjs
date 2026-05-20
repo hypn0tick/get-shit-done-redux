@@ -115,13 +115,13 @@ function makePathWithoutGitNexus(tmpDir) {
   return toBashPath(binDir);
 }
 
-function runHook(tmpDir, input, { env = {}, pathPrepend = '' } = {}) {
+function runHook(tmpDir, input, { env = {}, pathPrepend = '', hook = HOOK } = {}) {
   const bashPathPrepend = pathPrepend ? toBashPath(pathPrepend) : '';
   const PATH = pathPrepend
     ? `${bashPathPrepend}:${BASE_BASH_PATH}`
     : BASE_BASH_PATH;
   const ci = Object.hasOwn(env, 'CI') ? env.CI : '';
-  const command = `PATH=${shellQuote(env.PATH || PATH)} CI=${shellQuote(ci)} /bin/bash ${shellQuote(toBashPath(HOOK))}`;
+  const command = `PATH=${shellQuote(env.PATH || PATH)} CI=${shellQuote(ci)} /bin/bash ${shellQuote(toBashPath(hook))}`;
   return cp.spawnSync(BASH, ['-lc', command], {
     cwd: tmpDir,
     input: typeof input === 'string' ? input : JSON.stringify(input),
@@ -288,6 +288,21 @@ describe('GitNexus hook no-op gates', () => {
     assert.strictEqual(live.status, 0);
     const secondPid = fs.readFileSync(lockFile, 'utf8').trim();
     assert.strictEqual(secondPid, firstPid, 'live PID lock must suppress a second dispatch');
+
+    const missingHelperRepo = createTempGitRepo({ config: makeConfig() });
+    t.after(() => cleanup(missingHelperRepo));
+    const missingHelperHookDir = path.join(missingHelperRepo, 'hooks');
+    fs.mkdirSync(missingHelperHookDir, { recursive: true });
+    const missingHelperHook = path.join(missingHelperHookDir, 'gsd-gitnexus-update.sh');
+    fs.copyFileSync(HOOK, missingHelperHook);
+    const missingHelperMock = makeMockGitNexusPath(missingHelperRepo);
+    const missingHelper = runHook(
+      missingHelperRepo,
+      { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } },
+      { pathPrepend: missingHelperMock.binDir, hook: missingHelperHook },
+    );
+    assert.strictEqual(missingHelper.status, 0);
+    assert.equal(statusExists(missingHelperRepo), false, 'missing helper must not write running status');
   });
 
   test('stale GitNexus lock is removed and dispatch proceeds', (t) => {
@@ -344,6 +359,25 @@ describe('GitNexus hook commit and MCP triggers', () => {
     );
     assert.strictEqual(r.status, 0);
     assert.equal(statusExists(tmpDir), false);
+  });
+
+  test('non-mutating or quoted git command text does not dispatch', (t) => {
+    const commands = [
+      'git commit --dry-run',
+      'git commit --help',
+      'git pull --help',
+      'echo git commit -m x',
+      'printf "git commit -m x"',
+    ];
+
+    for (const command of commands) {
+      const tmpDir = createTempGitRepo({ config: makeConfig() });
+      t.after(() => cleanup(tmpDir));
+      const { binDir } = makeMockGitNexusPath(tmpDir);
+      const r = runHook(tmpDir, { tool_name: 'Bash', tool_input: { command } }, { pathPrepend: binDir });
+      assert.strictEqual(r.status, 0, command);
+      assert.equal(statusExists(tmpDir), false, command);
+    }
   });
 
   test('mcp trigger short names map exactly to full GitNexus tool names and bypass commit/branch gates', (t) => {

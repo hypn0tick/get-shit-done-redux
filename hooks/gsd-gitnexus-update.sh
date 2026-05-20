@@ -41,11 +41,24 @@ MCP_FAILED=$(printf '%s\n' "$TOOL_INFO" | sed -n '3p')
 TRIGGER_KIND=""
 case "$TOOL_NAME" in
   Bash)
-    case "$COMMAND" in
-      *"git commit"*|*"git merge"*|*"git pull"*|*"git rebase --continue"*|*"git cherry-pick"*) TRIGGER_KIND="commit" ;;
-      *"gsd-sdk query commit"|*"gsd-sdk query commit "*) TRIGGER_KIND="commit" ;;
-      *) exit 0 ;;
-    esac
+    TRIGGER_KIND=$(GSD_COMMAND="$COMMAND" node -e '
+const command = String(process.env.GSD_COMMAND || "").trim();
+const tokens = command.match(/"[^"]*"|'\''[^'\'']*'\''|\S+/g) || [];
+const clean = (value) => String(value || "").replace(/^["'\'']|["'\'']$/g, "");
+if (tokens[0] === "git") {
+  const op = tokens[1] || "";
+  const args = tokens.slice(2).map(clean);
+  if (args.includes("--help") || args.includes("-h") || args.includes("--dry-run")) process.exit(0);
+  if (["commit", "merge", "pull", "cherry-pick"].includes(op)) process.stdout.write("commit");
+  else if (op === "rebase" && args.includes("--continue")) process.stdout.write("commit");
+} else {
+  const offset = tokens[0] === "npx" ? 1 : 0;
+  if (tokens[offset] === "gsd-sdk" && tokens[offset + 1] === "query" && tokens[offset + 2] === "commit") {
+    process.stdout.write("commit");
+  }
+}
+' 2>/dev/null || true)
+    [ "$TRIGGER_KIND" = "commit" ] || exit 0
     ;;
   mcp__gitnexus__query) TRIGGER_KIND="mcp_query" ;;
   mcp__gitnexus__context) TRIGGER_KIND="mcp_context" ;;
@@ -134,6 +147,10 @@ try {
   rm -f "$LOCK_FILE" 2>/dev/null || true
 fi
 
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+REBUILD_SCRIPT="$HOOK_DIR/lib/gsd-gitnexus-rebuild.sh"
+[ -f "$REBUILD_SCRIPT" ] || exit 0
+
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
 STATUS_FILE=".gitnexus/.last-build-status.json"
 TS_START=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
@@ -153,10 +170,6 @@ node -e '
   };
   fs.writeFileSync(process.env.GSD_STATUS_FILE, JSON.stringify(status, null, 2) + "\n");
 ' 2>/dev/null || true
-
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-REBUILD_SCRIPT="$HOOK_DIR/lib/gsd-gitnexus-rebuild.sh"
-[ -f "$REBUILD_SCRIPT" ] || exit 0
 
 bash "$REBUILD_SCRIPT" \
   "$STATUS_FILE" \
