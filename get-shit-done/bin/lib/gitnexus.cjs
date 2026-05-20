@@ -499,11 +499,13 @@ function gitNexusStatus(cwd) {
   if (!isGitNexusEnabled(planningDir)) return disabledResponse();
 
   const metaPath = path.join(cwd, '.gitnexus', 'meta.json');
+  const rebuildStatus = safeReadGitNexusRebuildStatus(cwd);
   if (!fs.existsSync(metaPath)) {
     return {
       exists: false,
       reason: GITNEXUS_REASON.NO_INDEX,
       message: 'No GitNexus index found. Run gitnexus analyze to create one.',
+      rebuild_status: rebuildStatus,
     };
   }
 
@@ -543,8 +545,6 @@ function gitNexusStatus(cwd) {
   // Auto-update: read config for gitnexus.auto_update (default false)
   const config = readGitNexusConfig(cwd);
   const autoUpdate = config.auto_update === true;
-  const rebuildStatus = safeReadGitNexusRebuildStatus(cwd);
-
   return {
     exists: true,
     symbols: stats.nodes || stats.symbols || 0,

@@ -641,6 +641,29 @@ describe('gitNexusStatus', () => {
     assert.strictEqual(result.exists, false);
     assert.strictEqual(result.reason, GITNEXUS_REASON.NO_INDEX);
     assert.ok(result.message.includes('No GitNexus index found'));
+    assert.strictEqual(result.rebuild_status, null);
+  });
+
+  test('returns rebuild_status when status file exists before meta.json', () => {
+    enableGitNexus(planningDir);
+    writeGitNexusBuildStatus(tmpDir, {
+      ts: '2026-05-20T12:34:56Z',
+      status: 'failed',
+      exit_code: 7,
+      duration_ms: 1234,
+      head_at_build: 'abcdef0',
+    });
+
+    const result = gitNexusStatus(tmpDir);
+    assert.strictEqual(result.exists, false);
+    assert.strictEqual(result.reason, GITNEXUS_REASON.NO_INDEX);
+    assert.deepStrictEqual(result.rebuild_status, {
+      ts: '2026-05-20T12:34:56Z',
+      status: 'failed',
+      exit_code: 7,
+      duration_ms: 1234,
+      head_at_build: 'abcdef0',
+    });
   });
 
   test('reports stale:true when indexedAt is older than 24 hours', () => {
