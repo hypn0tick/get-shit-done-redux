@@ -252,7 +252,7 @@ function projectPathActionProjection({
   let shellActions;
   if (isWin32) {
     const psTargetDir = escapePowerShellSingleQuoted(targetDir);
-    const bashTargetDir = escapeSingleQuotedShellLiteral(String(targetDir).replace(/\\/g, '/'));
+    const bashTargetDir = escapePosixDoubleQuoted(String(targetDir).replace(/\\/g, '/'));
     shellActions = [
       {
         label: 'PowerShell',
@@ -271,7 +271,7 @@ function projectPathActionProjection({
       },
     ];
   } else if (mode === 'persist') {
-    const bashTargetDir = escapeSingleQuotedShellLiteral(String(targetDir));
+    const bashTargetDir = escapePosixDoubleQuoted(String(targetDir));
     shellActions = [
       {
         label: 'zsh',
