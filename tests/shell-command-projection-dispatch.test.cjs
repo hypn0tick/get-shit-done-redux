@@ -14,6 +14,7 @@ const {
   platformWriteSync,
   platformReadSync,
   platformEnsureDir,
+  _spawnResult,
 } = require(path.join(__dirname, '..', 'get-shit-done', 'bin', 'lib', 'shell-command-projection.cjs'));
 
 const { createTempGitProject, createTempDir, cleanup } = require('./helpers.cjs');
@@ -96,6 +97,65 @@ describe('execTool', () => {
     assert.strictEqual(result.exitCode, 127);
     assert.strictEqual(result.stdout, '');
     assert.strictEqual(typeof result.stderr, 'string');
+  });
+
+  test('passes shell:true to spawnSync on win32', () => {
+    const childProcess = require('child_process');
+    const { mock } = require('node:test');
+    let capturedOptions = null;
+    mock.method(childProcess, 'spawnSync', (_program, _args, options) => {
+      capturedOptions = options;
+      return {
+        status: 0,
+        stdout: '1.0.0',
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    try {
+      execTool('test-program', ['--version']);
+      // On win32, shell should be true; on other platforms, shell should be absent or false
+      if (process.platform === 'win32') {
+        assert.strictEqual(capturedOptions.shell, true, 'shell should be true on win32');
+      } else {
+        assert.ok(capturedOptions.shell === undefined || capturedOptions.shell === false,
+          'shell should not be set on non-win32 platforms');
+      }
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  test('does not set shell option on non-win32 platforms (structural verification)', () => {
+    // This test verifies the structural behavior: on non-Windows platforms,
+    // execTool should not set shell:true. On Windows, it should.
+    // The test is structural and will pass on any platform by checking
+    // that the behavior matches the platform expectation.
+    const childProcess = require('child_process');
+    const { mock } = require('node:test');
+    let capturedOptions = null;
+    mock.method(childProcess, 'spawnSync', (_program, _args, options) => {
+      capturedOptions = options;
+      return {
+        status: 0,
+        stdout: '1.0.0',
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    try {
+      execTool('test-program', ['--version']);
+      if (process.platform !== 'win32') {
+        assert.ok(!capturedOptions.shell || capturedOptions.shell === false,
+          'shell should not be true on non-win32 platforms');
+      }
+    } finally {
+      mock.restoreAll();
+    }
   });
 });
 
@@ -259,5 +319,53 @@ describe('platformEnsureDir', () => {
     const dirPath = path.join(tmpDir, 'existing');
     fs.mkdirSync(dirPath);
     assert.doesNotThrow(() => platformEnsureDir(dirPath));
+  });
+});
+
+// ─── Windows cmd.exe ENOENT normalization (CLI-02) ─────────────────────────────
+
+describe('Windows cmd.exe ENOENT normalization', () => {
+  test('normalizes cmd.exe "is not recognized" error to ENOENT on win32 with shell mode', () => {
+    const result = _spawnResult({
+      status: 1,
+      stdout: '',
+      stderr: "'gitnexus' is not recognized as an internal or external command",
+      error: null,
+      signal: null,
+    }, 'gitnexus', true);
+
+    assert.strictEqual(result.exitCode, 127);
+    assert.strictEqual(result.stderr, 'gitnexus: not found');
+    assert.strictEqual(result.error.code, 'ENOENT');
+  });
+
+  test('does not normalize non-recognition errors', () => {
+    const result = _spawnResult({
+      status: 1,
+      stdout: '',
+      stderr: 'some other error',
+      error: null,
+      signal: null,
+    }, 'gitnexus', true);
+
+    // Should preserve exit code 1, not normalize to 127
+    assert.strictEqual(result.exitCode, 1);
+    assert.strictEqual(result.stderr, 'some other error');
+    assert.strictEqual(result.error, null);
+  });
+
+  test('does not normalize when isShell is false', () => {
+    const result = _spawnResult({
+      status: 1,
+      stdout: '',
+      stderr: "'gitnexus' is not recognized as an internal or external command",
+      error: null,
+      signal: null,
+    }, 'gitnexus', false);
+
+    // Should preserve exit code 1, not normalize to 127
+    assert.strictEqual(result.exitCode, 1);
+    assert.strictEqual(result.stderr, "'gitnexus' is not recognized as an internal or external command");
+    assert.strictEqual(result.error, null);
   });
 });

@@ -363,9 +363,17 @@ function formatSdkPathDiagnostic({ shimDir, platform, runDir }) {
 
 // ─── Subprocess dispatch ──────────────────────────────────────────────────────
 
-function _spawnResult(result, program) {
+function _spawnResult(result, program, isShell = false) {
   if (result.error && result.error.code === 'ENOENT') {
     return { exitCode: 127, stdout: '', stderr: `${program}: not found`, signal: null, error: result.error };
+  }
+  // On Windows with shell mode, cmd.exe returns exit code 1 with "'program' is not recognized"
+  // for missing executables. Normalize this to ENOENT behavior for consistency.
+  if (isShell && process.platform === 'win32' && result.status === 1) {
+    const stderr = typeof result.stderr === 'string' ? result.stderr : (result.stderr ?? '').toString();
+    if (/is not recognized/i.test(stderr)) {
+      return { exitCode: 127, stdout: '', stderr: `${program}: not found`, signal: null, error: { code: 'ENOENT' } };
+    }
   }
   return {
     exitCode: result.status ?? 1,
@@ -404,18 +412,20 @@ function execNpm(args, opts = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout ?? 15_000,
   });
-  return _spawnResult(result, 'npm');
+  return _spawnResult(result, 'npm', process.platform === 'win32');
 }
 
 function execTool(program, args, opts = {}) {
+  const useShell = process.platform === 'win32';
   const result = childProcess.spawnSync(program, args, {
     cwd: opts.cwd,
     env: opts.env ? { ...process.env, ...opts.env } : undefined,
     encoding: 'utf-8',
     stdio: 'pipe',
     timeout: opts.timeout ?? 30_000,
+    ...(useShell ? { shell: true } : {}),
   });
-  return _spawnResult(result, program);
+  return _spawnResult(result, program, useShell);
 }
 
 function probeTty(opts = {}) {
@@ -541,6 +551,7 @@ module.exports = {
   projectPersistentPathExportActions,
   buildWindowsShimTriple,
   formatSdkPathDiagnostic,
+  _spawnResult,
   execGit,
   execNpm,
   execTool,
