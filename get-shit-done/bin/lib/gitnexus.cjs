@@ -99,6 +99,24 @@ function readGitNexusConfig(cwd) {
  * @param {string} windowsPath - Windows path to translate
  * @returns {string} WSL-compatible path
  */
+function safeReadGitNexusRebuildStatus(cwd) {
+  try {
+    const statusPath = path.join(cwd, '.gitnexus', '.last-build-status.json');
+    if (!fs.existsSync(statusPath)) return null;
+    const parsed = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return {
+      ts: typeof parsed.ts === 'string' ? parsed.ts : null,
+      status: typeof parsed.status === 'string' ? parsed.status : null,
+      exit_code: typeof parsed.exit_code === 'number' || parsed.exit_code === null ? parsed.exit_code : null,
+      duration_ms: typeof parsed.duration_ms === 'number' || parsed.duration_ms === null ? parsed.duration_ms : null,
+      head_at_build: typeof parsed.head_at_build === 'string' ? parsed.head_at_build : null,
+    };
+  } catch (_e) {
+    return null;
+  }
+}
+
 function windowsToWslPath(windowsPath) {
   if (typeof windowsPath !== 'string') return windowsPath;
   const match = windowsPath.match(/^([A-Za-z]):[\\/](.*)$/);
@@ -525,6 +543,7 @@ function gitNexusStatus(cwd) {
   // Auto-update: read config for gitnexus.auto_update (default false)
   const config = readGitNexusConfig(cwd);
   const autoUpdate = config.auto_update === true;
+  const rebuildStatus = safeReadGitNexusRebuildStatus(cwd);
 
   return {
     exists: true,
@@ -538,6 +557,7 @@ function gitNexusStatus(cwd) {
     indexed_commit: validCommit ? validCommit.slice(0, 7) : null,
     current_commit: currentCommit,
     auto_update: autoUpdate,
+    rebuild_status: rebuildStatus,
   };
 }
 
