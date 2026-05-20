@@ -24,6 +24,13 @@ const SH_HOOKS = [
   'gsd-session-state.sh',
   'gsd-validate-commit.sh',
   'gsd-phase-boundary.sh',
+  'gsd-graphify-update.sh',
+  'gsd-gitnexus-update.sh',
+];
+
+const HOOK_LIB_HELPERS = [
+  'gsd-graphify-rebuild.sh',
+  'gsd-gitnexus-rebuild.sh',
 ];
 
 describe('package.json manifest — hooks .sh files (#1852 #1862)', () => {
@@ -68,6 +75,20 @@ describe('package.json manifest — hooks .sh files (#1852 #1862)', () => {
         [
           `${hook} must exist at hooks/${hook}.`,
           'This file must be present in the repository so that',
+          'it is included when npm packs the "hooks" directory.',
+        ].join(' ')
+      );
+    });
+  }
+
+  for (const helper of HOOK_LIB_HELPERS) {
+    test(`${helper} exists in hooks/lib/ source directory`, () => {
+      const helperPath = path.join(HOOKS_DIR, 'lib', helper);
+      assert.ok(
+        fs.existsSync(helperPath),
+        [
+          `${helper} must exist at hooks/lib/${helper}.`,
+          'This helper must be present in the repository so that',
           'it is included when npm packs the "hooks" directory.',
         ].join(' ')
       );
