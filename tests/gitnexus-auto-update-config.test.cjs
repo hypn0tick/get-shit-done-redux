@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Phase 03 GitNexus auto-update trigger config contract.
+ * GitNexus auto-update trigger config contract.
  */
 
 const { describe, test } = require('node:test');
@@ -19,7 +19,7 @@ const {
   CONFIG_DEFAULTS: CANONICAL_CONFIG_DEFAULTS,
 } = require('../get-shit-done/bin/lib/configuration.generated.cjs');
 
-describe('Phase 03 - gitnexus.auto_update_triggers config', () => {
+describe('GitNexus auto-update trigger config', () => {
   test('gitnexus.auto_update_triggers is a registered config key', () => {
     assert.ok(VALID_CONFIG_KEYS.has('gitnexus.auto_update_triggers'));
     assert.ok(isValidConfigKey('gitnexus.auto_update_triggers'));
