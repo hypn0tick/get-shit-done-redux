@@ -97,6 +97,7 @@
     "gitnexus.use_wsl",
     "gitnexus.cli_path",
     "gitnexus.auto_update",
+    "gitnexus.auto_update_triggers",
     "gitnexus.skills",
     "gitnexus.budget.query",
     "gitnexus.budget.context",

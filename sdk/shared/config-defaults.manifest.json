@@ -76,6 +76,7 @@
     "use_wsl": "auto",
     "cli_path": "gitnexus",
     "auto_update": false,
+    "auto_update_triggers": ["commit"],
     "skills": false,
     "query_timeout_ms": 90000,
     "context_timeout_ms": 90000,

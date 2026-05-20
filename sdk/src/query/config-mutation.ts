@@ -302,6 +302,31 @@ export const configSet: QueryHandler = async (args, projectDir, workstream) => {
     validateShipPrBodySections(parsedValue);
   }
 
+  if (keyPath === 'gitnexus.auto_update_triggers') {
+    const validGitNexusAutoUpdateTriggers = [
+      'commit',
+      'mcp_query',
+      'mcp_context',
+      'mcp_impact',
+      'mcp_detect_changes',
+    ];
+    if (!Array.isArray(parsedValue)) {
+      throw new GSDError(
+        `Invalid gitnexus.auto_update_triggers '${rawValue}'. Must be a JSON array of: ${validGitNexusAutoUpdateTriggers.join(', ')}.`,
+        ErrorClassification.Validation,
+      );
+    }
+    const invalidTriggers = parsedValue.filter((trigger) => (
+      typeof trigger !== 'string' || !validGitNexusAutoUpdateTriggers.includes(trigger)
+    ));
+    if (invalidTriggers.length > 0) {
+      throw new GSDError(
+        `Invalid gitnexus.auto_update_triggers '${rawValue}'. Valid values: ${validGitNexusAutoUpdateTriggers.join(', ')}.`,
+        ErrorClassification.Validation,
+      );
+    }
+  }
+
   // CJS parity (config.cjs:430-441): boolean-only keys must reject non-boolean
   // input.  Without this, `config-set git.create_tag maybe` silently writes
   // "maybe" to disk under SDK dispatch even though the CJS path correctly

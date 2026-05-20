@@ -454,6 +454,29 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
     validateShipPrBodySections(parsedValue);
   }
 
+  if (keyPath === 'gitnexus.auto_update_triggers') {
+    const validGitNexusAutoUpdateTriggers = [
+      'commit',
+      'mcp_query',
+      'mcp_context',
+      'mcp_impact',
+      'mcp_detect_changes',
+    ];
+    if (!Array.isArray(parsedValue)) {
+      error(
+        `Invalid gitnexus.auto_update_triggers '${value}'. Must be a JSON array of: ${validGitNexusAutoUpdateTriggers.join(', ')}.`,
+      );
+    }
+    const invalidTriggers = parsedValue.filter((trigger) => (
+      typeof trigger !== 'string' || !validGitNexusAutoUpdateTriggers.includes(trigger)
+    ));
+    if (invalidTriggers.length > 0) {
+      error(
+        `Invalid gitnexus.auto_update_triggers '${value}'. Valid values: ${validGitNexusAutoUpdateTriggers.join(', ')}.`,
+      );
+    }
+  }
+
   // Human verification checkpoint mode (#3309)
   const VALID_HUMAN_VERIFY_MODES = ['mid-flight', 'end-of-phase'];
   if (keyPath === 'workflow.human_verify_mode' && !VALID_HUMAN_VERIFY_MODES.includes(String(parsedValue))) {

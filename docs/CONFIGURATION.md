@@ -466,6 +466,30 @@ Toggle optional capabilities via the `features.*` config namespace. Feature flag
 | `graphify.build_timeout` | number (seconds) | `300` | Maximum seconds allowed for a `/gsd-graphify build` run before it aborts. Added in v1.36 |
 | `graphify.auto_update` | boolean | `false` | **Opt-in (issue #3347).** When `true` (and `graphify.enabled` is also `true`), the bundled PostToolUse hook `hooks/gsd-graphify-update.sh` auto-rebuilds the project knowledge graph in a detached background process after `git commit/merge/pull/rebase --continue/cherry-pick` on the default branch (`git.base_branch` override, else `main`/`master`/`trunk`). Hook returns instantly; the rebuild updates `.planning/graphs/{graph.json,graph.html,GRAPH_REPORT.md}` and writes `.planning/graphs/.last-build-status.json` (`{ts, status: "running"\|"ok"\|"failed", exit_code, duration_ms, head_at_build}`). PID-locked, CI-aware (`$CI` env suppresses), bails silently if `graphify` is not on `PATH`. Default `false` so existing behaviour is unchanged after upgrade. |
 
+<a id="gitnexus-settings"></a>
+### GitNexus Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `gitnexus.enabled` | boolean | `false` | Enable GitNexus code intelligence integration. When disabled, GitNexus commands return structured disabled responses instead of invoking the CLI. |
+| `gitnexus.use_wsl` | boolean or `"auto"` | `"auto"` | Controls whether GitNexus CLI calls route through WSL on Windows. |
+| `gitnexus.cli_path` | string | `"gitnexus"` | CLI executable path used for GitNexus commands. |
+| `gitnexus.auto_update` | boolean | `false` | Opt into GitNexus index auto-update hooks. Enabling this setting does not immediately rebuild the index; the next configured trigger does. |
+| `gitnexus.auto_update_triggers` | string[] | `["commit"]` | Events that may trigger a GitNexus auto-update rebuild. Allowed values: `commit`, `mcp_query`, `mcp_context`, `mcp_impact`, and `mcp_detect_changes`. The default is commit-only. |
+| `gitnexus.skills` | boolean | `false` | Enable GitNexus-backed generated skill integration where supported. |
+| `gitnexus.budget.query` | number | `2000` | Token budget for GitNexus query responses. |
+| `gitnexus.budget.context` | number | `1500` | Token budget for GitNexus context responses. |
+| `gitnexus.budget.impact` | number | `1000` | Token budget for GitNexus impact responses. |
+| `gitnexus.budget.detect_changes` | number | `500` | Token budget for GitNexus detect-changes responses. |
+| `gitnexus.budget.rename` | number | `1000` | Token budget for GitNexus rename responses. |
+| `gitnexus.budget.cypher` | number | `2000` | Token budget for GitNexus cypher responses. |
+| `gitnexus.query_timeout_ms` | number | `90000` | Timeout for GitNexus query subprocess calls. |
+| `gitnexus.context_timeout_ms` | number | `90000` | Timeout for GitNexus context subprocess calls. |
+| `gitnexus.impact_timeout_ms` | number | `90000` | Timeout for GitNexus impact subprocess calls. |
+| `gitnexus.detect_changes_timeout_ms` | number | `180000` | Timeout for GitNexus detect-changes subprocess calls. |
+| `gitnexus.replace_grep_exploration` | boolean | `false` | When `false`, agents use GitNexus first and validate with grep/direct reads. When `true`, agents use GitNexus for code exploration and reserve grep for exact text, replacement, and verification tasks. |
+| `gitnexus.embeddings` | boolean or `"auto"` | `"auto"` | Controls optional GitNexus embedding behavior where supported by the local CLI/index. |
+
 #### Multi-developer setup
 
 If multiple developers will rebuild the graph in the same repo, run once per
