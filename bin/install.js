@@ -9622,13 +9622,20 @@ function install(isGlobal, runtime = 'claude', options = {}) {
     const gitnexusUpdateCommand = isGlobal
       ? buildHookCommand(targetDir, 'gsd-gitnexus-update.sh', hookOpts)
       : localShellCmd('gsd-gitnexus-update.sh');
+    const gitnexusUpdateMatcher = [
+      'Bash',
+      'mcp__gitnexus__query',
+      'mcp__gitnexus__context',
+      'mcp__gitnexus__impact',
+      'mcp__gitnexus__detect_changes',
+    ].join('|');
     const hasGitnexusUpdateHook = settings.hooks[postToolEvent].some(entry =>
       entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-gitnexus-update'))
     );
     const gitnexusUpdateFile = path.join(targetDir, 'hooks', 'gsd-gitnexus-update.sh');
     if (!hasGitnexusUpdateHook && fs.existsSync(gitnexusUpdateFile) && gitnexusUpdateCommand) {
       settings.hooks[postToolEvent].push({
-        matcher: 'Bash',
+        matcher: gitnexusUpdateMatcher,
         hooks: [
           {
             type: 'command',
@@ -9642,6 +9649,12 @@ function install(isGlobal, runtime = 'claude', options = {}) {
       console.warn(`  ${yellow}⚠${reset}  Skipped GitNexus auto-update hook — gsd-gitnexus-update.sh not found at target`);
     } else if (!hasGitnexusUpdateHook && !gitnexusUpdateCommand) {
       console.warn(`  ${yellow}⚠${reset}  Skipped GitNexus auto-update hook — Bash executable path unavailable (#3393)`);
+    } else {
+      for (const entry of settings.hooks[postToolEvent]) {
+        if (entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-gitnexus-update'))) {
+          entry.matcher = gitnexusUpdateMatcher;
+        }
+      }
     }
 
     // Configure session state orientation hook (opt-in)
