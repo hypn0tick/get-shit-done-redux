@@ -81,10 +81,16 @@ function detectSubRepos(cwd) {
                     results.push(entry.name);
                 }
             }
-            catch { /* ignore */ }
+            catch (err) {
+                // Intentionally ignored: sub-repo .git detection is best-effort;
+                // missing directories or permission errors should not block config loading.
+            }
         }
     }
-    catch { /* ignore */ }
+    catch (err) {
+        // Intentionally ignored: directory listing for sub-repo detection is best-effort;
+        // permission errors or missing directories should not block config loading.
+    }
     return results.sort();
 }
 
