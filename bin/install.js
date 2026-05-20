@@ -908,9 +908,8 @@ function rewriteLegacyCodexHookBlock(content, absoluteRunner, opts) {
   return { content: updated, changed };
 }
 
-function reconcileCodexHooksJsonSessionStart(targetDir, opts = {}) {
+function reconcileCodexHooksJsonManagedHooks(targetDir, managedEntries = []) {
   const hooksJsonPath = path.join(targetDir, 'hooks.json');
-  const managedCommand = typeof opts.managedCommand === 'string' ? opts.managedCommand : null;
   let parsed = {};
   let currentContent = null;
   if (fs.existsSync(hooksJsonPath)) {
@@ -929,47 +928,53 @@ function reconcileCodexHooksJsonSessionStart(targetDir, opts = {}) {
   const usesNestedHooksObject =
     parsed.hooks && typeof parsed.hooks === 'object' && !Array.isArray(parsed.hooks);
   const hookTable = usesNestedHooksObject ? parsed.hooks : parsed;
-  const sessionStart = Array.isArray(hookTable.SessionStart) ? hookTable.SessionStart : [];
+  const entriesByEvent = new Map();
+  for (const entry of managedEntries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const eventName = typeof entry.eventName === 'string' ? entry.eventName : null;
+    if (!eventName) continue;
+    if (!entriesByEvent.has(eventName)) entriesByEvent.set(eventName, []);
+    entriesByEvent.get(eventName).push(entry);
+  }
 
-  let removedLegacy = false;
-  const sanitizedSessionStart = [];
-  for (const entry of sessionStart) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
-    const originalHooks = Array.isArray(entry.hooks) ? entry.hooks : [];
-    if (originalHooks.length === 0) {
-      sanitizedSessionStart.push(entry);
-      continue;
-    }
+  let removedManaged = false;
+  for (const [eventName, eventEntries] of entriesByEvent.entries()) {
+    const existingEntries = Array.isArray(hookTable[eventName]) ? hookTable[eventName] : [];
+    const sanitizedEntries = [];
+    for (const entry of existingEntries) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const originalHooks = Array.isArray(entry.hooks) ? entry.hooks : [];
+      if (originalHooks.length === 0) {
+        sanitizedEntries.push(entry);
+        continue;
+      }
       const keptHooks = originalHooks.filter((hook) => {
         const cmd = hook && typeof hook === 'object' ? hook.command : null;
         const managed = isManagedHookCommand(cmd, {
           surface: 'codex-hooks-json',
           includeLegacyAliases: true,
-        configDir: targetDir,
+          configDir: targetDir,
+        });
+        if (managed) removedManaged = true;
+        return !managed;
       });
-      if (managed) removedLegacy = true;
-      return !managed;
-    });
-    if (keptHooks.length === 0) continue;
-    const nextEntry = { ...entry, hooks: keptHooks };
-    sanitizedSessionStart.push(nextEntry);
-  }
+      if (keptHooks.length === 0) continue;
+      sanitizedEntries.push({ ...entry, hooks: keptHooks });
+    }
 
-  if (managedCommand) {
-    sanitizedSessionStart.push({
-      hooks: [
-        {
-          type: 'command',
-          command: managedCommand,
-        },
-      ],
-    });
-  }
+    for (const managedEntry of eventEntries) {
+      if (!Array.isArray(managedEntry.hooks) || managedEntry.hooks.length === 0) continue;
+      const nextEntry = {};
+      if (typeof managedEntry.matcher === 'string') nextEntry.matcher = managedEntry.matcher;
+      nextEntry.hooks = managedEntry.hooks.map((hook) => ({ ...hook }));
+      sanitizedEntries.push(nextEntry);
+    }
 
-  if (sanitizedSessionStart.length > 0) {
-    hookTable.SessionStart = sanitizedSessionStart;
-  } else {
-    delete hookTable.SessionStart;
+    if (sanitizedEntries.length > 0) {
+      hookTable[eventName] = sanitizedEntries;
+    } else {
+      delete hookTable[eventName];
+    }
   }
   if (usesNestedHooksObject) parsed.hooks = hookTable;
 
@@ -980,7 +985,25 @@ function reconcileCodexHooksJsonSessionStart(targetDir, opts = {}) {
     atomicWriteFileSync(hooksJsonPath, nextContent, 'utf8');
   }
 
-  return { changed: changed || removedLegacy, wrote: shouldWrite, path: hooksJsonPath };
+  return { changed: changed || removedManaged, wrote: shouldWrite, path: hooksJsonPath };
+}
+
+function reconcileCodexHooksJsonSessionStart(targetDir, opts = {}) {
+  const managedCommand = typeof opts.managedCommand === 'string' ? opts.managedCommand : null;
+  const managedEntries = [
+    {
+      eventName: 'SessionStart',
+      hooks: managedCommand
+        ? [
+            {
+              type: 'command',
+              command: managedCommand,
+            },
+          ]
+        : [],
+    },
+  ];
+  return reconcileCodexHooksJsonManagedHooks(targetDir, managedEntries);
 }
 
 /**
@@ -1120,6 +1143,56 @@ function ensureCodexHooksJsonSessionStart(targetDir, opts = {}) {
 
 function removeCodexHooksJsonSessionStart(targetDir) {
   return reconcileCodexHooksJsonSessionStart(targetDir, { managedCommand: null });
+}
+
+function removeCodexHooksJsonManagedHooks(targetDir) {
+  return reconcileCodexHooksJsonManagedHooks(targetDir, [
+    { eventName: 'SessionStart', hooks: [] },
+    { eventName: 'PostToolUse', hooks: [] },
+  ]);
+}
+
+function ensureCodexHooksJsonPostToolUseAutoUpdates(targetDir, opts = {}) {
+  const graphifyCommand = typeof opts.graphifyCommand === 'string' ? opts.graphifyCommand : null;
+  const gitnexusCommand = typeof opts.gitnexusCommand === 'string' ? opts.gitnexusCommand : null;
+  const gitnexusUpdateMatcher = [
+    'Bash',
+    'mcp__gitnexus__query',
+    'mcp__gitnexus__context',
+    'mcp__gitnexus__impact',
+    'mcp__gitnexus__detect_changes',
+  ].join('|');
+  const managedEntries = [];
+  if (graphifyCommand) {
+    managedEntries.push({
+      eventName: 'PostToolUse',
+      matcher: 'Bash',
+      hooks: [
+        {
+          type: 'command',
+          command: graphifyCommand,
+          timeout: 5,
+        },
+      ],
+    });
+  }
+  if (gitnexusCommand) {
+    managedEntries.push({
+      eventName: 'PostToolUse',
+      matcher: gitnexusUpdateMatcher,
+      hooks: [
+        {
+          type: 'command',
+          command: gitnexusCommand,
+          timeout: 5,
+        },
+      ],
+    });
+  }
+  if (managedEntries.length === 0) {
+    managedEntries.push({ eventName: 'PostToolUse', hooks: [] });
+  }
+  return reconcileCodexHooksJsonManagedHooks(targetDir, managedEntries);
 }
 
 /**
@@ -6757,10 +6830,10 @@ function uninstall(isGlobal, runtime = 'claude') {
       }
     }
 
-    const hooksJsonCleanup = removeCodexHooksJsonSessionStart(targetDir);
+    const hooksJsonCleanup = removeCodexHooksJsonManagedHooks(targetDir);
     if (hooksJsonCleanup.changed) {
       removedCount++;
-      console.log(`  ${green}✓${reset} Removed managed Codex SessionStart hook from hooks.json`);
+      console.log(`  ${green}✓${reset} Removed managed Codex hooks from hooks.json`);
     }
   }
 
@@ -9062,11 +9135,17 @@ function install(isGlobal, runtime = 'claude', options = {}) {
       console.log(`  ${dim}↳${reset} Skipping Codex agent config generation (minimal install)`);
     }
 
+    const codexHookOpts = { portableHooks: hasPortableHooks, runtime: 'codex' };
+    const codexGraphifyUpdateCommand = buildHookCommand(targetDir, 'gsd-graphify-update.sh', codexHookOpts);
+    const codexGitnexusUpdateCommand = buildHookCommand(targetDir, 'gsd-gitnexus-update.sh', codexHookOpts);
+    const codexCanInstallShellHooks = Boolean(codexGraphifyUpdateCommand && codexGitnexusUpdateCommand);
+
     // Copy only the hook files that Codex actually registers via its hook configuration (#2153).
-    // Codex primarily needs gsd-check-update.js for the SessionStart update-check hook.
-    // We deliberately do *not* copy gsd-graphify-update.sh, gsd-gitnexus-update.sh,
-    // or hooks/lib/ for Codex until Codex shell-hook support is expanded.
+    // Shell hooks auto-enable when the installer can resolve a Bash runner (#3393).
     const CODEX_HOOKS_TO_COPY = ['gsd-check-update.js'];
+    if (codexCanInstallShellHooks) {
+      CODEX_HOOKS_TO_COPY.push('gsd-graphify-update.sh', 'gsd-gitnexus-update.sh');
+    }
     const codexHooksSrc = path.join(src, 'hooks', 'dist');
     if (fs.existsSync(codexHooksSrc)) {
       const codexHooksDest = path.join(targetDir, 'hooks');
@@ -9088,15 +9167,22 @@ function install(isGlobal, runtime = 'claude', options = {}) {
         } else if (entry.endsWith('.sh')) {
           // #2136: any .sh hook reaching this loop must have {{GSD_VERSION}}
           // stamped so installed scripts carry a concrete version header and
-          // stale-hook detection keeps working across upgrades. The current
-          // CODEX_HOOKS_TO_COPY allowlist excludes .sh files, so this branch
-          // is defensive — it preserves the invariant if the allowlist is
-          // extended later to ship auto-update shell hooks for Codex.
+          // stale-hook detection keeps working across upgrades.
           let content = fs.readFileSync(srcFile, 'utf8');
           content = content.replace(/\{\{GSD_VERSION\}\}/g, pkg.version);
           fs.writeFileSync(destFile, content);
           try { fs.chmodSync(destFile, 0o755); } catch (e) { /* Windows */ }
         }
+      }
+      if (codexCanInstallShellHooks) {
+        const codexHooksLibSrc = path.join(src, 'hooks', 'lib');
+        const codexHooksLibDest = path.join(codexHooksDest, 'lib');
+        if (fs.existsSync(codexHooksLibSrc)) {
+          fs.mkdirSync(codexHooksLibDest, { recursive: true });
+          copyLibDir(codexHooksLibSrc, codexHooksLibDest, GSD_HOOK_LIB_FILES);
+        }
+      } else {
+        console.warn(`  ${yellow}⚠${reset}  Skipped Codex Graphify/GitNexus shell hooks — Bash executable path unavailable (#3393)`);
       }
       console.log(`  ${green}✓${reset} Installed hooks (Codex)`);
     }
@@ -9194,6 +9280,29 @@ function install(isGlobal, runtime = 'claude', options = {}) {
             console.log(`  ${green}✓${reset} Configured Codex hooks (SessionStart via hooks.json)`);
           } else {
             console.log(`  ${green}✓${reset} Verified Codex hooks (SessionStart via hooks.json)`);
+          }
+        }
+
+        const graphifyUpdateFile = path.join(targetDir, 'hooks', 'gsd-graphify-update.sh');
+        const gitnexusUpdateFile = path.join(targetDir, 'hooks', 'gsd-gitnexus-update.sh');
+        if (!fs.existsSync(graphifyUpdateFile)) {
+          ensureCodexHooksJsonPostToolUseAutoUpdates(targetDir);
+          console.warn(`  ${yellow}⚠${reset}  Skipped Codex graphify auto-update hook — gsd-graphify-update.sh not found at target`);
+        } else if (!fs.existsSync(gitnexusUpdateFile)) {
+          ensureCodexHooksJsonPostToolUseAutoUpdates(targetDir);
+          console.warn(`  ${yellow}⚠${reset}  Skipped Codex GitNexus auto-update hook — gsd-gitnexus-update.sh not found at target`);
+        } else if (!codexGraphifyUpdateCommand || !codexGitnexusUpdateCommand) {
+          ensureCodexHooksJsonPostToolUseAutoUpdates(targetDir);
+          console.warn(`  ${yellow}⚠${reset}  Skipped Codex Graphify/GitNexus shell hooks — Bash executable path unavailable (#3393)`);
+        } else {
+          const postToolWrite = ensureCodexHooksJsonPostToolUseAutoUpdates(targetDir, {
+            graphifyCommand: codexGraphifyUpdateCommand,
+            gitnexusCommand: codexGitnexusUpdateCommand,
+          });
+          if (postToolWrite.wrote) {
+            console.log(`  ${green}✓${reset} Configured Codex hooks (PostToolUse via hooks.json)`);
+          } else {
+            console.log(`  ${green}✓${reset} Verified Codex hooks (PostToolUse via hooks.json)`);
           }
         }
       }

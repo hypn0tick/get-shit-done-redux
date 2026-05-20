@@ -129,6 +129,8 @@ const MANAGED_HOOK_COMMAND_BASENAMES_BY_SURFACE = {
     // reconcileCodexHooksJsonSessionStart can replace stale node-runner commands
     // with the .cmd shim on reinstall (and vice-versa on cross-platform moves).
     'gsd-check-update.cmd',
+    'gsd-graphify-update.sh',
+    'gsd-gitnexus-update.sh',
   ]),
 };
 

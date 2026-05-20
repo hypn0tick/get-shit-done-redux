@@ -82,6 +82,16 @@ function writeCodexConfig(codexHome, content) {
 }
 
 function readHooksSessionStartCommands(codexHome) {
+  const sessionStart = readHooksEventEntries(codexHome, 'SessionStart');
+  return sessionStart.flatMap((entry) => [
+    ...(typeof entry?.command === 'string' ? [entry.command] : []),
+    ...(Array.isArray(entry?.hooks)
+      ? entry.hooks.map((hook) => hook && hook.command).filter((cmd) => typeof cmd === 'string')
+      : []),
+  ]);
+}
+
+function readHooksEventEntries(codexHome, eventName) {
   const hooksPath = path.join(codexHome, 'hooks.json');
   if (!fs.existsSync(hooksPath)) return [];
   const raw = fs.readFileSync(hooksPath, 'utf8').trim();
@@ -90,13 +100,7 @@ function readHooksSessionStartCommands(codexHome) {
   const table = (parsed.hooks && typeof parsed.hooks === 'object' && !Array.isArray(parsed.hooks))
     ? parsed.hooks
     : parsed;
-  const sessionStart = Array.isArray(table.SessionStart) ? table.SessionStart : [];
-  return sessionStart.flatMap((entry) => [
-    ...(typeof entry?.command === 'string' ? [entry.command] : []),
-    ...(Array.isArray(entry?.hooks)
-      ? entry.hooks.map((hook) => hook && hook.command).filter((cmd) => typeof cmd === 'string')
-      : []),
-  ]);
+  return Array.isArray(table[eventName]) ? table[eventName] : [];
 }
 
 function countMatches(content, pattern) {
@@ -1456,6 +1460,60 @@ describe('Codex install hook configuration (e2e)', () => {
       fs.existsSync(hookFile),
       `gsd-check-update.js must exist at ${hookFile} — hooks.json references it (directly on POSIX, via .cmd shim on Windows) but file was not installed`
     );
+  });
+
+  test('Codex install copies Graphify/GitNexus shell hooks and lib helpers when hooks are enabled', () => {
+    runCodexInstall(codexHome);
+
+    for (const relativePath of [
+      path.join('hooks', 'gsd-graphify-update.sh'),
+      path.join('hooks', 'gsd-gitnexus-update.sh'),
+      path.join('hooks', 'lib', 'gsd-graphify-rebuild.sh'),
+      path.join('hooks', 'lib', 'gsd-gitnexus-rebuild.sh'),
+    ]) {
+      const installedPath = path.join(codexHome, relativePath);
+      assert.ok(fs.existsSync(installedPath), `${relativePath} should exist after Codex install`);
+    }
+  });
+
+  test('Codex install registers Graphify/GitNexus PostToolUse hooks when hooks are enabled', () => {
+    runCodexInstall(codexHome);
+
+    const postToolUse = readHooksEventEntries(codexHome, 'PostToolUse');
+    assert.ok(Array.isArray(postToolUse), 'hooks.json should contain a PostToolUse array');
+
+    const graphifyEntry = postToolUse.find((entry) =>
+      entry.matcher === 'Bash' &&
+      Array.isArray(entry.hooks) &&
+      entry.hooks.some((hook) =>
+        hook.type === 'command' &&
+        typeof hook.command === 'string' &&
+        hook.command.includes('gsd-graphify-update.sh') &&
+        hook.timeout === 5
+      )
+    );
+    assert.ok(graphifyEntry, 'expected Codex PostToolUse Bash hook for gsd-graphify-update.sh');
+
+    const gitnexusEntry = postToolUse.find((entry) =>
+      typeof entry.matcher === 'string' &&
+      Array.isArray(entry.hooks) &&
+      entry.hooks.some((hook) =>
+        hook.type === 'command' &&
+        typeof hook.command === 'string' &&
+        hook.command.includes('gsd-gitnexus-update.sh') &&
+        hook.timeout === 5
+      )
+    );
+    assert.ok(gitnexusEntry, 'expected Codex PostToolUse hook for gsd-gitnexus-update.sh');
+    for (const toolName of [
+      'Bash',
+      'mcp__gitnexus__query',
+      'mcp__gitnexus__context',
+      'mcp__gitnexus__impact',
+      'mcp__gitnexus__detect_changes',
+    ]) {
+      assert.match(gitnexusEntry.matcher, new RegExp(`(^|\\|)${toolName}(\\||$)`));
+    }
   });
 
   test('fresh CODEX_HOME enables codex_hooks without draft root defaults', () => {

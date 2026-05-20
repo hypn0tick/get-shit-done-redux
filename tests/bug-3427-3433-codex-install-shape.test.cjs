@@ -26,16 +26,20 @@ function withCodexHome(codexHome, fn) {
   }
 }
 
-function extractSessionStartCommandsFromHooksJson(value) {
+function extractEventCommandsFromHooksJson(value, eventName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
   const table = (value.hooks && typeof value.hooks === 'object' && !Array.isArray(value.hooks))
     ? value.hooks
     : value;
-  const sessionStart = Array.isArray(table.SessionStart) ? table.SessionStart : [];
-  return sessionStart.flatMap((entry) => {
+  const entries = Array.isArray(table[eventName]) ? table[eventName] : [];
+  return entries.flatMap((entry) => {
     const hooks = entry && Array.isArray(entry.hooks) ? entry.hooks : [];
     return hooks.map((h) => h && h.command).filter((cmd) => typeof cmd === 'string');
   });
+}
+
+function extractSessionStartCommandsFromHooksJson(value) {
+  return extractEventCommandsFromHooksJson(value, 'SessionStart');
 }
 
 describe('#3427 + #3433 — Codex installer avoids duplicate skills and mixed hook representation', { concurrency: false }, () => {
@@ -132,11 +136,15 @@ describe('#3427 + #3433 — Codex installer avoids duplicate skills and mixed ho
     assert.equal(sessionStartCommands.includes('node "/Users/example/bin/user-hook.js"'), true);
   });
 
-  test('uninstall removes managed SessionStart hook from hooks.json but preserves user hooks', () => {
+  test('uninstall removes managed Codex hooks from hooks.json but preserves user hooks', () => {
     const hooksDir = path.join(codexHome, 'hooks');
     fs.mkdirSync(hooksDir, { recursive: true });
     fs.writeFileSync(path.join(hooksDir, 'gsd-check-update.js'), '// managed hook\n');
+    fs.writeFileSync(path.join(hooksDir, 'gsd-graphify-update.sh'), '# managed graphify hook\n');
+    fs.writeFileSync(path.join(hooksDir, 'gsd-gitnexus-update.sh'), '# managed gitnexus hook\n');
     const managedHookPath = path.join(codexHome, 'hooks', 'gsd-check-update.js').replace(/\\/g, '/');
+    const managedGraphifyPath = path.join(codexHome, 'hooks', 'gsd-graphify-update.sh').replace(/\\/g, '/');
+    const managedGitnexusPath = path.join(codexHome, 'hooks', 'gsd-gitnexus-update.sh').replace(/\\/g, '/');
 
     fs.writeFileSync(path.join(codexHome, 'hooks.json'), JSON.stringify({
       SessionStart: [
@@ -144,6 +152,21 @@ describe('#3427 + #3433 — Codex installer avoids duplicate skills and mixed ho
           hooks: [
             { type: 'command', command: `node "${managedHookPath}"` },
             { type: 'command', command: 'node "/Users/example/bin/user-hook.js"' },
+          ],
+        },
+      ],
+      PostToolUse: [
+        {
+          matcher: 'Bash',
+          hooks: [
+            { type: 'command', command: `bash "${managedGraphifyPath}"` },
+            { type: 'command', command: 'node "/Users/example/bin/user-posttool.js"' },
+          ],
+        },
+        {
+          matcher: 'Bash|mcp__gitnexus__query',
+          hooks: [
+            { type: 'command', command: `bash "${managedGitnexusPath}"` },
           ],
         },
       ],
@@ -155,9 +178,15 @@ describe('#3427 + #3433 — Codex installer avoids duplicate skills and mixed ho
     const sessionStartCommands = extractSessionStartCommandsFromHooksJson(hooksJson);
     // On Windows the managed hook is the .cmd shim path; on POSIX it is the .js node-runner command.
     // Either way the managed hook is gone after uninstall — only the user hook remains.
+    const postToolCommands = extractEventCommandsFromHooksJson(hooksJson, 'PostToolUse');
     const gsdCommands = sessionStartCommands.filter((cmd) => cmd.includes('gsd-check-update'));
+    const gsdPostToolCommands = postToolCommands.filter((cmd) =>
+      cmd.includes('gsd-graphify-update.sh') || cmd.includes('gsd-gitnexus-update.sh')
+    );
 
     assert.equal(gsdCommands.length, 0);
+    assert.equal(gsdPostToolCommands.length, 0);
     assert.equal(sessionStartCommands.includes('node "/Users/example/bin/user-hook.js"'), true);
+    assert.equal(postToolCommands.includes('node "/Users/example/bin/user-posttool.js"'), true);
   });
 });
