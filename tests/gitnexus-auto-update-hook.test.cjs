@@ -348,6 +348,32 @@ describe('GitNexus hook commit and MCP triggers', () => {
     }
   });
 
+  test('already up to date git pull output does not dispatch', (t) => {
+    const tmpDir = createTempGitRepo({ config: makeConfig() });
+    t.after(() => cleanup(tmpDir));
+    const { binDir } = makeMockGitNexusPath(tmpDir);
+    const cases = [
+      { stdout: 'Already up to date.\n' },
+      { stdout: 'Already up-to-date.\n' },
+      { stderr: 'From origin\nAlready up to date.\n' },
+      { output: 'Already up to date.\n' },
+    ];
+
+    for (const toolResponse of cases) {
+      const r = runHook(
+        tmpDir,
+        {
+          tool_name: 'Bash',
+          tool_input: { command: 'git pull --ff-only' },
+          tool_response: toolResponse,
+        },
+        { pathPrepend: binDir },
+      );
+      assert.strictEqual(r.status, 0);
+      assert.equal(statusExists(tmpDir), false);
+    }
+  });
+
   test('non-commit SDK prefix collision does not dispatch', (t) => {
     const tmpDir = createTempGitRepo({ config: makeConfig() });
     t.after(() => cleanup(tmpDir));

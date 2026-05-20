@@ -24,10 +24,16 @@ process.stdin.on("end", () => {
     process.stdout.write([
       p.tool_name || "",
       p.tool_input?.command || "",
-      failed ? "1" : "0"
+      failed ? "1" : "0",
+      p.tool_response?.stdout ||
+        p.tool_response?.stderr ||
+        p.tool_response?.output ||
+        p.tool_response?.text ||
+        p.tool_response?.content ||
+        ""
     ].join("\n"));
   } catch {
-    process.stdout.write("\n\n0");
+    process.stdout.write("\n\n0\n");
   }
 });
 ' 2>/dev/null || printf '\n\n0')
@@ -35,20 +41,23 @@ process.stdin.on("end", () => {
 TOOL_NAME=$(printf '%s\n' "$TOOL_INFO" | sed -n '1p')
 COMMAND=$(printf '%s\n' "$TOOL_INFO" | sed -n '2p')
 MCP_FAILED=$(printf '%s\n' "$TOOL_INFO" | sed -n '3p')
+TOOL_OUTPUT=$(printf '%s\n' "$TOOL_INFO" | sed '1,3d')
 
 [ -n "$TOOL_NAME" ] || exit 0
 
 TRIGGER_KIND=""
 case "$TOOL_NAME" in
   Bash)
-    TRIGGER_KIND=$(GSD_COMMAND="$COMMAND" node -e '
+    TRIGGER_KIND=$(GSD_COMMAND="$COMMAND" GSD_TOOL_OUTPUT="$TOOL_OUTPUT" node -e '
 const command = String(process.env.GSD_COMMAND || "").trim();
+const output = String(process.env.GSD_TOOL_OUTPUT || "");
 const tokens = command.match(/"[^"]*"|'\''[^'\'']*'\''|\S+/g) || [];
 const clean = (value) => String(value || "").replace(/^["'\'']|["'\'']$/g, "");
 if (tokens[0] === "git") {
   const op = tokens[1] || "";
   const args = tokens.slice(2).map(clean);
   if (args.includes("--help") || args.includes("-h") || args.includes("--dry-run")) process.exit(0);
+  if (op === "pull" && /\balready[- ]up[- ]to[- ]date\b/i.test(output)) process.exit(0);
   if (["commit", "merge", "pull", "cherry-pick"].includes(op)) process.stdout.write("commit");
   else if (op === "rebase" && args.includes("--continue")) process.stdout.write("commit");
 } else {
