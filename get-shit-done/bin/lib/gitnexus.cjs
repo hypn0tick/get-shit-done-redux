@@ -704,7 +704,7 @@ function gitNexusBuild(cwd) {
 
     // Build timeout from config -- default 600s (10 minutes) per D-17
     const config = readGitNexusConfig(cwd);
-    const timeoutSec = (config.build_timeout) || 600;
+    const timeoutSec = config.build_timeout ?? 600;
 
     // .gitnexus directory path (will be created by gitnexus analyze)
     const gitnexusDir = path.join(cwd, '.gitnexus');
