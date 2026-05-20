@@ -457,6 +457,41 @@ describe('execGitNexus', () => {
     assert.strictEqual(result.exitCode, 124);
   });
 
+  test('uses command-specific timeout defaults for detect-changes', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: undefined,
+      signal: 'SIGTERM',
+    }));
+
+    const result = execGitNexus('/tmp', ['detect-changes', '--scope', 'unstaged'], { platform: 'linux' });
+    assert.strictEqual(result.reason, GITNEXUS_REASON.TIMEOUT);
+    assert.strictEqual(result.timeout_ms, 180000);
+    assert.ok(result.stderr.includes('detect-changes'));
+    assert.ok(result.stderr.includes('runtime=native'));
+  });
+
+  test('uses config timeout override for semantic commands', () => {
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: undefined,
+      signal: 'SIGTERM',
+    }));
+
+    const result = execGitNexus('/tmp', ['query', 'test'], {
+      config: { query_timeout_ms: 45000 },
+      platform: 'linux',
+    });
+    assert.strictEqual(result.reason, GITNEXUS_REASON.TIMEOUT);
+    assert.strictEqual(result.timeout_ms, 45000);
+    assert.ok(result.stderr.includes('gitnexus query timed out'));
+    assert.ok(result.stderr.includes('gitnexus.query_timeout_ms'));
+  });
+
   test('returns CLI_ERROR on non-zero exit', () => {
     mock.method(childProcess, 'spawnSync', () => ({
       status: 1,

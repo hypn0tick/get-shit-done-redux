@@ -19,6 +19,17 @@ const GITNEXUS_REASON = Object.freeze({
   NO_INDEX: 'no_index',
 });
 
+const GITNEXUS_TIMEOUT_DEFAULTS = Object.freeze({
+  status: 30000,
+  query: 90000,
+  context: 90000,
+  impact: 90000,
+  'detect-changes': 180000,
+  rename: 90000,
+  cypher: 90000,
+  version: 10000,
+});
+
 // ─── Config Gate (CONF-01, CJS-03, D-02) ───────────────────────────────────
 
 /**
@@ -132,6 +143,38 @@ function resolveWslSetting(config, platform) {
   return false;
 }
 
+function inferGitNexusOperation(args) {
+  if (!Array.isArray(args) || args.length === 0) return 'status';
+  if (args[0] === '--version') return 'version';
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (token === '--repo' || token === '--limit' || token === '--direction' || token === '--scope') {
+      i += 1;
+      continue;
+    }
+    if (typeof token === 'string' && !token.startsWith('--')) {
+      return token;
+    }
+  }
+  return 'status';
+}
+
+function resolveGitNexusTimeout(config, operation, explicitTimeout) {
+  if (typeof explicitTimeout === 'number') return explicitTimeout;
+  const op = operation || 'status';
+  const timeoutKeyByOperation = {
+    query: 'query_timeout_ms',
+    context: 'context_timeout_ms',
+    impact: 'impact_timeout_ms',
+    'detect-changes': 'detect_changes_timeout_ms',
+  };
+  const timeoutKey = timeoutKeyByOperation[op];
+  if (timeoutKey && typeof config?.[timeoutKey] === 'number' && Number.isFinite(config[timeoutKey]) && config[timeoutKey] > 0) {
+    return config[timeoutKey];
+  }
+  return GITNEXUS_TIMEOUT_DEFAULTS[op] || GITNEXUS_TIMEOUT_DEFAULTS.status;
+}
+
 // ─── Output Parsing (D-13, RESEARCH Pitfall 2) ─────────────────────────────
 
 /**
@@ -219,7 +262,9 @@ function execGitNexus(cwd, args, options = {}) {
   const config = options.config || readGitNexusConfig(cwd);
   const platform = options.platform || process.platform;
   const useWsl = resolveWslSetting(config, platform);
-  const timeout = options.timeout ?? 30000;
+  const operation = options.operation || inferGitNexusOperation(args);
+  const timeout = resolveGitNexusTimeout(config, operation, options.timeout);
+  const runtimeLabel = useWsl ? 'wsl' : 'native';
 
   if (useWsl) {
     // Route through WSL on Windows.
@@ -252,7 +297,7 @@ function execGitNexus(cwd, args, options = {}) {
       return {
         exitCode: 124,
         stdout: result.stdout || '',
-        stderr: 'gitnexus timed out via WSL after ' + timeout + 'ms',
+        stderr: `gitnexus ${operation} timed out via WSL after ${timeout}ms (runtime=${runtimeLabel}; set gitnexus.${operation === 'detect-changes' ? 'detect_changes' : operation}_timeout_ms to override)`,
         reason: GITNEXUS_REASON.TIMEOUT,
         timeout_ms: timeout,
       };
@@ -323,7 +368,7 @@ function execGitNexus(cwd, args, options = {}) {
     return {
       exitCode: 124,
       stdout: result.stdout || '',
-      stderr: 'gitnexus timed out after ' + timeout + 'ms',
+      stderr: `gitnexus ${operation} timed out after ${timeout}ms (runtime=${runtimeLabel}; set gitnexus.${operation === 'detect-changes' ? 'detect_changes' : operation}_timeout_ms to override)`,
       reason: GITNEXUS_REASON.TIMEOUT,
       timeout_ms: timeout,
     };
@@ -519,7 +564,7 @@ function gitNexusQuery(cwd, term, options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['query', term, '--limit', '5', '--repo', repoName], { config });
+    const result = execGitNexus(cwd, ['query', term, '--limit', '5', '--repo', repoName], { config, operation: 'query' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
       return { reason: result.reason, message: result.stderr || 'gitnexus query failed' };
@@ -558,7 +603,7 @@ function gitNexusContext(cwd, name, options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['context', name, '--repo', repoName], { config });
+    const result = execGitNexus(cwd, ['context', name, '--repo', repoName], { config, operation: 'context' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
       return { reason: result.reason, message: result.stderr || 'gitnexus context failed' };
@@ -598,7 +643,7 @@ function gitNexusImpact(cwd, target, direction = 'upstream', options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['impact', target, '--direction', direction, '--repo', repoName], { config });
+    const result = execGitNexus(cwd, ['impact', target, '--direction', direction, '--repo', repoName], { config, operation: 'impact' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
       return { reason: result.reason, message: result.stderr || 'gitnexus impact failed' };
@@ -634,7 +679,7 @@ function gitNexusDetectChanges(cwd, scope = 'unstaged', options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['detect-changes', '--scope', scope, '--repo', repoName], { config });
+    const result = execGitNexus(cwd, ['detect-changes', '--scope', scope, '--repo', repoName], { config, operation: 'detect-changes' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
       return { reason: result.reason, message: result.stderr || 'gitnexus detect-changes failed' };

@@ -23,6 +23,24 @@ const TEST_ENV_BASE = {
   TTY: '',
   SSH_TTY: '',
 };
+const PENDING_WINDOWS_CLEANUPS = new Set();
+let pendingCleanupHookInstalled = false;
+
+function registerPendingWindowsCleanup(target) {
+  if (!target) return;
+  PENDING_WINDOWS_CLEANUPS.add(target);
+  if (pendingCleanupHookInstalled) return;
+  pendingCleanupHookInstalled = true;
+  process.once('exit', () => {
+    for (const cleanupTarget of PENDING_WINDOWS_CLEANUPS) {
+      try {
+        fs.rmSync(cleanupTarget, { recursive: true, force: true, maxRetries: 80, retryDelay: 250 });
+      } catch {
+        // Best-effort only on process exit.
+      }
+    }
+  });
+}
 
 /**
  * Run gsd-tools command.
@@ -117,7 +135,32 @@ function cleanup(tmpDir) {
   // teardown runs. On POSIX the retry loop is a no-op (rmSync succeeds first try).
   // Budget: 20 × 250ms = 5s total — Windows Defender's deferred scan can hold
   // newly-written files for several seconds on cold runners.
-  fs.rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } catch (err) {
+    if (process.platform !== 'win32' || !err || !['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(err.code)) {
+      throw err;
+    }
+    const quarantineTarget = path.join(
+      path.dirname(target),
+      `${path.basename(target)}-pending-delete-${process.pid}-${Date.now()}`
+    );
+    let retryTarget = target;
+    try {
+      fs.renameSync(target, quarantineTarget);
+      retryTarget = quarantineTarget;
+    } catch {
+      retryTarget = target;
+    }
+    try {
+      fs.rmSync(retryTarget, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
+    } catch (retryErr) {
+      if (!retryErr || !['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(retryErr.code)) {
+        throw retryErr;
+      }
+      registerPendingWindowsCleanup(retryTarget);
+    }
+  }
 }
 
 /**

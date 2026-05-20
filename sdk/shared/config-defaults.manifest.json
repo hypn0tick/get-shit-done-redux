@@ -77,6 +77,10 @@
     "cli_path": "gitnexus",
     "auto_update": false,
     "skills": false,
+    "query_timeout_ms": 90000,
+    "context_timeout_ms": 90000,
+    "impact_timeout_ms": 90000,
+    "detect_changes_timeout_ms": 180000,
     "budget": {
       "query": 2000,
       "context": 1500,
