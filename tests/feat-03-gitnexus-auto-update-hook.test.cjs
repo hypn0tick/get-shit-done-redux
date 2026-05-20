@@ -10,6 +10,29 @@ const os = require('node:os');
 const ROOT = path.join(__dirname, '..');
 const HOOK = path.join(ROOT, 'hooks', 'gsd-gitnexus-update.sh');
 const REBUILD = path.join(ROOT, 'hooks', 'lib', 'gsd-gitnexus-rebuild.sh');
+const BASE_BASH_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+const BASH = process.platform === 'win32'
+  ? cp.execFileSync('where.exe', ['bash'], { encoding: 'utf8' }).split(/\r?\n/).find(Boolean)
+  : 'bash';
+
+function toBashPath(filePath) {
+  if (filePath.startsWith('/')) return filePath;
+  if (process.platform !== 'win32') return filePath;
+  try {
+    return cp.execFileSync('wslpath', ['-a', '-u', filePath], { encoding: 'utf8' }).trim();
+  } catch {
+    // Fall through to Git Bash/Cygwin or a conservative WSL-style conversion.
+  }
+  try {
+    return cp.execFileSync('cygpath', ['-u', filePath], { encoding: 'utf8' }).trim();
+  } catch {
+    return filePath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`);
+  }
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -55,35 +78,54 @@ function makeConfig(overrides = {}) {
 function makeMockGitNexusPath(tmpDir, { exitCode = 0, sleepMs = 0 } = {}) {
   const binDir = path.join(tmpDir, '.mock-bin');
   fs.mkdirSync(binDir, { recursive: true });
-  const logFile = path.join(tmpDir, 'mock-npx.log').replace(/\\/g, '/');
+  const logFile = path.join(tmpDir, 'mock-npx.log');
+  const bashLogFile = toBashPath(logFile);
   const sleepLine = sleepMs ? `sleep ${(sleepMs / 1000).toFixed(3)}` : '';
   const npxBody = [
-    '#!/usr/bin/env bash',
+    '#!/bin/bash',
     'set -u',
-    `printf '%s\\n' "$*" >> "${logFile}"`,
+    `printf '%s\\n' "$*" >> "${bashLogFile}"`,
     sleepLine,
     `exit ${exitCode}`,
   ]
     .filter(Boolean)
     .join('\n');
-  fs.writeFileSync(path.join(binDir, 'npx'), npxBody + '\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(binDir, 'gitnexus'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+  const npxPath = path.join(binDir, 'npx');
+  const gitNexusPath = path.join(binDir, 'gitnexus');
+  fs.writeFileSync(npxPath, npxBody + '\n', { mode: 0o755 });
+  fs.writeFileSync(gitNexusPath, '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+  cp.spawnSync(BASH, ['-lc', `chmod +x "${toBashPath(npxPath)}" "${toBashPath(gitNexusPath)}"`]);
   return { binDir, logFile };
 }
 
+function makePathWithoutGitNexus(tmpDir) {
+  const binDir = path.join(tmpDir, '.mock-no-gitnexus');
+  fs.mkdirSync(binDir, { recursive: true });
+  const wrappers = {
+    git: '#!/bin/bash\nexec /usr/bin/git "$@"\n',
+    node: '#!/bin/bash\nexec /usr/bin/node "$@"\n',
+    sed: '#!/bin/bash\nexec /bin/sed "$@"\n',
+    cat: '#!/bin/bash\nexec /bin/cat "$@"\n',
+  };
+  for (const [name, body] of Object.entries(wrappers)) {
+    const script = path.join(binDir, name);
+    fs.writeFileSync(script, body, { mode: 0o755 });
+    cp.spawnSync(BASH, ['-lc', `chmod +x "${toBashPath(script)}"`]);
+  }
+  return toBashPath(binDir);
+}
+
 function runHook(tmpDir, input, { env = {}, pathPrepend = '' } = {}) {
+  const bashPathPrepend = pathPrepend ? toBashPath(pathPrepend) : '';
   const PATH = pathPrepend
-    ? `${pathPrepend}${path.delimiter}${process.env.PATH || ''}`
-    : process.env.PATH || '';
-  return cp.spawnSync('bash', [HOOK], {
+    ? `${bashPathPrepend}:${BASE_BASH_PATH}`
+    : BASE_BASH_PATH;
+  const ci = Object.hasOwn(env, 'CI') ? env.CI : '';
+  const command = `PATH=${shellQuote(env.PATH || PATH)} CI=${shellQuote(ci)} /bin/bash ${shellQuote(toBashPath(HOOK))}`;
+  return cp.spawnSync(BASH, ['-lc', command], {
     cwd: tmpDir,
     input: typeof input === 'string' ? input : JSON.stringify(input),
-    env: {
-      ...process.env,
-      PATH,
-      CI: '',
-      ...env,
-    },
+    env: process.env,
     encoding: 'utf8',
     timeout: 30000,
   });
@@ -94,15 +136,21 @@ function runHelper(tmpDir, { exitCode = 0, sleepMs = 0 } = {}) {
   const statusFile = path.join(tmpDir, '.gitnexus', '.last-build-status.json');
   const lockFile = path.join(tmpDir, '.gitnexus', '.rebuild.lock');
   fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+  const command = [
+    `PATH=${shellQuote(`${toBashPath(binDir)}:${BASE_BASH_PATH}`)}`,
+    '/bin/bash',
+    shellQuote(toBashPath(REBUILD)),
+    shellQuote(toBashPath(statusFile)),
+    shellQuote(toBashPath(lockFile)),
+    shellQuote('abc1234'),
+    shellQuote(String(Date.now())),
+  ].join(' ');
   const result = cp.spawnSync(
-    'bash',
-    [REBUILD, statusFile, lockFile, 'abc1234', String(Date.now())],
+    BASH,
+    ['-lc', command],
     {
       cwd: tmpDir,
-      env: {
-        ...process.env,
-        PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
-      },
+      env: process.env,
       encoding: 'utf8',
       timeout: 30000,
     },
@@ -146,7 +194,12 @@ function cleanup(tmpDir) {
     }
     sleep(50);
   }
-  fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+  } catch (err) {
+    if (process.platform !== 'win32') throw err;
+    cp.spawnSync(BASH, ['-lc', `rm -rf "${toBashPath(tmpDir)}"`]);
+  }
 }
 
 describe('GitNexus hook no-op gates', () => {
@@ -207,30 +260,44 @@ describe('GitNexus hook no-op gates', () => {
     const missingBin = runHook(
       missingBinRepo,
       { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } },
-      { env: { PATH: '/usr/bin:/bin' } },
+      { env: { PATH: makePathWithoutGitNexus(missingBinRepo) } },
     );
     assert.strictEqual(missingBin.status, 0);
     assert.equal(statusExists(missingBinRepo), false);
 
     const liveLockRepo = createTempGitRepo({ config: makeConfig() });
     t.after(() => cleanup(liveLockRepo));
-    fs.mkdirSync(path.join(liveLockRepo, '.gitnexus'), { recursive: true });
-    fs.writeFileSync(path.join(liveLockRepo, '.gitnexus', '.rebuild.lock'), String(process.pid));
-    const liveMock = makeMockGitNexusPath(liveLockRepo);
+    const liveMock = makeMockGitNexusPath(liveLockRepo, { sleepMs: 10000 });
+    const first = runHook(
+      liveLockRepo,
+      { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } },
+      { pathPrepend: liveMock.binDir },
+    );
+    assert.strictEqual(first.status, 0);
+    const lockFile = path.join(liveLockRepo, '.gitnexus', '.rebuild.lock');
+    const lockDeadline = Date.now() + 5000;
+    while (!fs.existsSync(lockFile) && Date.now() < lockDeadline) sleep(50);
+    assert.equal(fs.existsSync(lockFile), true, 'first dispatch should create a live lock');
+    const firstPid = fs.readFileSync(lockFile, 'utf8').trim();
+
     const live = runHook(
       liveLockRepo,
       { tool_name: 'Bash', tool_input: { command: 'git commit -m x' } },
       { pathPrepend: liveMock.binDir },
     );
     assert.strictEqual(live.status, 0);
-    assert.equal(statusExists(liveLockRepo), false);
+    const secondPid = fs.readFileSync(lockFile, 'utf8').trim();
+    assert.strictEqual(secondPid, firstPid, 'live PID lock must suppress a second dispatch');
   });
 
   test('stale GitNexus lock is removed and dispatch proceeds', (t) => {
     const tmpDir = createTempGitRepo({ config: makeConfig() });
     t.after(() => cleanup(tmpDir));
     fs.mkdirSync(path.join(tmpDir, '.gitnexus'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.gitnexus', '.rebuild.lock'), '4194303');
+    const staleLock = path.join(tmpDir, '.gitnexus', '.rebuild.lock');
+    fs.writeFileSync(staleLock, '4194303');
+    const staleTime = new Date(Date.now() - 60_000);
+    fs.utimesSync(staleLock, staleTime, staleTime);
     const { binDir } = makeMockGitNexusPath(tmpDir, { sleepMs: 500 });
 
     const r = runHook(
