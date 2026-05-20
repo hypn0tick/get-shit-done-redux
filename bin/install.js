@@ -93,8 +93,8 @@ const GSD_COPILOT_INSTRUCTIONS_MARKER = '<!-- GSD Configuration \u2014 managed b
 const GSD_COPILOT_INSTRUCTIONS_CLOSE_MARKER = '<!-- /GSD Configuration -->';
 
 // GSD-managed files under hooks/lib/ (helpers required by gsd-*.sh hooks).
-// git-cmd.js does not start with "gsd-" (shared classifier for #3129), gsd-graphify-rebuild.sh does.
-const GSD_HOOK_LIB_FILES = ['git-cmd.js', 'gsd-graphify-rebuild.sh'];
+// git-cmd.js does not start with "gsd-" (shared classifier for #3129), rebuild helpers do.
+const GSD_HOOK_LIB_FILES = ['git-cmd.js', 'gsd-graphify-rebuild.sh', 'gsd-gitnexus-rebuild.sh'];
 
 const CODEX_AGENT_SANDBOX = {
   'gsd-executor': 'workspace-write',
@@ -6904,7 +6904,7 @@ function uninstall(isGlobal, runtime = 'claude') {
   // 4. Remove GSD hooks
   const hooksDir = path.join(targetDir, 'hooks');
   if (fs.existsSync(hooksDir)) {
-    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.cmd', 'gsd-context-monitor.js', 'gsd-prompt-guard.js', 'gsd-read-guard.js', 'gsd-read-injection-scanner.js', 'gsd-update-banner.js', 'gsd-workflow-guard.js', 'gsd-session-state.sh', 'gsd-validate-commit.sh', 'gsd-phase-boundary.sh', 'gsd-graphify-update.sh'];
+    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.cmd', 'gsd-context-monitor.js', 'gsd-prompt-guard.js', 'gsd-read-guard.js', 'gsd-read-injection-scanner.js', 'gsd-update-banner.js', 'gsd-workflow-guard.js', 'gsd-session-state.sh', 'gsd-validate-commit.sh', 'gsd-phase-boundary.sh', 'gsd-graphify-update.sh', 'gsd-gitnexus-update.sh'];
     let hookCount = 0;
     for (const hook of gsdHooks) {
       const hookPath = path.join(hooksDir, hook);
@@ -6918,7 +6918,7 @@ function uninstall(isGlobal, runtime = 'claude') {
       console.log(`  ${green}✓${reset} Removed ${hookCount} GSD hooks`);
     }
 
-    // Remove only the GSD-managed files from hooks/lib/ (git-cmd.js + gsd-graphify-rebuild.sh).
+    // Remove only the GSD-managed files from hooks/lib/.
     // hooks/lib/ lives inside the user's runtime hooks directory (shared space) and
     // may contain user-owned custom helpers. We must not recursively delete the dir.
     const hooksLibDir = path.join(hooksDir, 'lib');
@@ -7566,7 +7566,7 @@ function writeManifest(configDir, runtime = 'claude', options = {}) {
         }
       }
       // Track hooks/lib/ helpers so saveLocalPatches() can back up user edits
-      // to git-cmd.js (validate-commit classifier) and gsd-graphify-rebuild.sh.
+      // to managed hook support files.
       const hooksLibDir = path.join(hooksDir, 'lib');
       if (fs.existsSync(hooksLibDir)) {
         for (const file of fs.readdirSync(hooksLibDir)) {
@@ -7919,7 +7919,7 @@ function install(isGlobal, runtime = 'claude', options = {}) {
   const dirName = getDirName(runtime);
   const src = path.join(__dirname, '..');
 
-  // Reusable helper to copy hooks/lib/ (git-cmd.js + gsd-graphify-rebuild.sh).
+  // Reusable helper to copy GSD-managed hooks/lib/ support files.
   // Defined early so it is visible to both the main and Codex code paths.
   // `allowlist` (when non-empty) restricts copying to the named top-level entries,
   // keeping install scope aligned with GSD_HOOK_LIB_FILES (which uninstall/manifest manage).
@@ -8755,10 +8755,8 @@ function install(isGlobal, runtime = 'claude', options = {}) {
             }
           }
         } else if (fs.statSync(srcFile).isDirectory()) {
-          // #3579: recurse one level into hook subdirs (lib/ etc.). The
-          // graphify auto-update hook's rebuild helper lives at
-          // hooks/dist/lib/gsd-graphify-rebuild.sh and must land at the
-          // mirrored target path so the hook's REBUILD_SCRIPT lookup resolves.
+          // Recurse one level into hook subdirs so auto-update rebuild helpers
+          // land at the mirrored target path and hook lookups resolve.
           const subDest = path.join(hooksDest, entry);
           fs.mkdirSync(subDest, { recursive: true });
           const subEntries = fs.readdirSync(srcFile);
@@ -8780,7 +8778,7 @@ function install(isGlobal, runtime = 'claude', options = {}) {
       if (verifyInstalled(hooksDest, 'hooks')) {
         console.log(`  ${green}✓${reset} Installed hooks (bundled)`);
         // Warn if expected community .sh hooks are missing (non-fatal)
-        const expectedShHooks = ['gsd-session-state.sh', 'gsd-validate-commit.sh', 'gsd-phase-boundary.sh', 'gsd-graphify-update.sh'];
+        const expectedShHooks = ['gsd-session-state.sh', 'gsd-validate-commit.sh', 'gsd-phase-boundary.sh', 'gsd-graphify-update.sh', 'gsd-gitnexus-update.sh'];
         for (const sh of expectedShHooks) {
           if (!fs.existsSync(path.join(hooksDest, sh))) {
             console.warn(`  ${yellow}⚠${reset}  Missing expected hook: ${sh}`);
@@ -9066,8 +9064,8 @@ function install(isGlobal, runtime = 'claude', options = {}) {
 
     // Copy only the hook files that Codex actually registers via its hook configuration (#2153).
     // Codex primarily needs gsd-check-update.js for the SessionStart update-check hook.
-    // We deliberately do *not* copy gsd-graphify-update.sh or hooks/lib/ for Codex
-    // in this change (graphify auto-update support for Codex is out of scope for #3579).
+    // We deliberately do *not* copy gsd-graphify-update.sh, gsd-gitnexus-update.sh,
+    // or hooks/lib/ for Codex until Codex shell-hook support is expanded.
     const CODEX_HOOKS_TO_COPY = ['gsd-check-update.js'];
     const codexHooksSrc = path.join(src, 'hooks', 'dist');
     if (fs.existsSync(codexHooksSrc)) {
@@ -9093,7 +9091,7 @@ function install(isGlobal, runtime = 'claude', options = {}) {
           // stale-hook detection keeps working across upgrades. The current
           // CODEX_HOOKS_TO_COPY allowlist excludes .sh files, so this branch
           // is defensive — it preserves the invariant if the allowlist is
-          // extended later (e.g. to ship gsd-graphify-update.sh for Codex).
+          // extended later to ship auto-update shell hooks for Codex.
           let content = fs.readFileSync(srcFile, 'utf8');
           content = content.replace(/\{\{GSD_VERSION\}\}/g, pkg.version);
           fs.writeFileSync(destFile, content);
@@ -9619,6 +9617,31 @@ function install(isGlobal, runtime = 'claude', options = {}) {
       console.warn(`  ${yellow}⚠${reset}  Skipped graphify auto-update hook — gsd-graphify-update.sh not found at target`);
     } else if (!hasGraphifyUpdateHook && !graphifyUpdateCommand) {
       console.warn(`  ${yellow}⚠${reset}  Skipped graphify auto-update hook — Bash executable path unavailable (#3393)`);
+    }
+
+    const gitnexusUpdateCommand = isGlobal
+      ? buildHookCommand(targetDir, 'gsd-gitnexus-update.sh', hookOpts)
+      : localShellCmd('gsd-gitnexus-update.sh');
+    const hasGitnexusUpdateHook = settings.hooks[postToolEvent].some(entry =>
+      entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-gitnexus-update'))
+    );
+    const gitnexusUpdateFile = path.join(targetDir, 'hooks', 'gsd-gitnexus-update.sh');
+    if (!hasGitnexusUpdateHook && fs.existsSync(gitnexusUpdateFile) && gitnexusUpdateCommand) {
+      settings.hooks[postToolEvent].push({
+        matcher: 'Bash',
+        hooks: [
+          {
+            type: 'command',
+            command: gitnexusUpdateCommand,
+            timeout: 5
+          }
+        ]
+      });
+      console.log(`  ${green}✓${reset} Configured GitNexus auto-update hook (opt-in via gitnexus.auto_update)`);
+    } else if (!hasGitnexusUpdateHook && !fs.existsSync(gitnexusUpdateFile)) {
+      console.warn(`  ${yellow}⚠${reset}  Skipped GitNexus auto-update hook — gsd-gitnexus-update.sh not found at target`);
+    } else if (!hasGitnexusUpdateHook && !gitnexusUpdateCommand) {
+      console.warn(`  ${yellow}⚠${reset}  Skipped GitNexus auto-update hook — Bash executable path unavailable (#3393)`);
     }
 
     // Configure session state orientation hook (opt-in)

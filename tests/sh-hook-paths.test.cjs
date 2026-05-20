@@ -33,6 +33,7 @@ const SH_HOOKS = [
   { name: 'gsd-validate-commit.sh', commandVar: 'validateCommitCommand' },
   { name: 'gsd-session-state.sh',   commandVar: 'sessionStateCommand' },
   { name: 'gsd-phase-boundary.sh',  commandVar: 'phaseBoundaryCommand' },
+  { name: 'gsd-gitnexus-update.sh', commandVar: 'gitnexusUpdateCommand' },
 ];
 
 describe('bugs #2045 #2046: .sh hook paths must be absolute and quoted', () => {
