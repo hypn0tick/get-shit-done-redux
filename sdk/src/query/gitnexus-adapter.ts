@@ -22,6 +22,16 @@ type CjsApi = {
   gitNexusCypher: (projectDir: string, query?: string) => CjsResponse;
 };
 
+type GitNexusOperation =
+  | 'status'
+  | 'query'
+  | 'context'
+  | 'impact'
+  | 'detect_changes'
+  | 'build'
+  | 'rename'
+  | 'cypher';
+
 let cjs: CjsApi | null = null;
 let cjsLoadError = false;
 
@@ -41,56 +51,97 @@ function disabledResult() {
   };
 }
 
-function translateCjsResult(cjsResult: CjsResponse) {
+function errorResult(reason: string, message: string) {
+  return {
+    ok: false,
+    reason,
+    provider: 'gitnexus',
+    message,
+  };
+}
+
+function isObject(value: unknown): value is CjsResponse {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasAnyKey(value: CjsResponse, keys: string[]) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function hasValidSuccessShape(operation: GitNexusOperation, value: CjsResponse) {
+  switch (operation) {
+    case 'status':
+      return typeof value.exists === 'boolean';
+    case 'query':
+      return hasAnyKey(value, ['processes', 'definitions', 'symbols', 'edges']);
+    case 'context':
+      return hasAnyKey(value, ['processes', 'callers', 'callees', 'definitions', 'edges', 'symbol']);
+    case 'impact':
+      return hasAnyKey(value, ['risk', 'affected_processes', 'affected_modules', 'byDepth', 'impactedCount']);
+    case 'detect_changes':
+      return hasAnyKey(value, ['changed_symbols', 'affected_processes', 'risk_summary']);
+    case 'build':
+      return value.action === 'spawn_agent';
+    case 'rename':
+      return hasAnyKey(value, ['graph_edits', 'text_search_edits', 'confidence', 'edits', 'changes']);
+    case 'cypher':
+      return hasAnyKey(value, ['rows', 'markdown']);
+  }
+}
+
+function translateCjsResult(operation: GitNexusOperation, cjsResult: unknown) {
   if (cjsLoadError || !cjs) return disabledResult();
+  if (!isObject(cjsResult)) {
+    return errorResult('invalid_response', 'GitNexus returned a malformed response.');
+  }
   if (cjsResult && cjsResult.disabled === true) return disabledResult();
   if (cjsResult && typeof cjsResult.reason === 'string' && cjsResult.reason !== 'ok') {
-    return {
-      ok: false,
-      reason: cjsResult.reason,
-      provider: 'gitnexus',
-      message: cjsResult.message ?? '',
-    };
+    return errorResult(cjsResult.reason, cjsResult.message ?? '');
+  }
+  if (!hasValidSuccessShape(operation, cjsResult)) {
+    return errorResult('invalid_response', 'GitNexus returned a malformed response.');
   }
   return { ok: true, ...cjsResult };
 }
 
-export async function gitnexusStatus(_args: string[], projectDir: string) {
+function callCjs(operation: GitNexusOperation, callback: () => CjsResponse) {
   if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusStatus(projectDir));
+  try {
+    return translateCjsResult(operation, callback());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return errorResult('gitnexus_error', message);
+  }
+}
+
+export async function gitnexusStatus(_args: string[], projectDir: string) {
+  return callCjs('status', () => cjs!.gitNexusStatus(projectDir));
 }
 
 export async function gitnexusQuery(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusQuery(projectDir, args[0]));
+  return callCjs('query', () => cjs!.gitNexusQuery(projectDir, args[0]));
 }
 
 export async function gitnexusContext(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusContext(projectDir, args[0]));
+  return callCjs('context', () => cjs!.gitNexusContext(projectDir, args[0]));
 }
 
 export async function gitnexusImpact(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusImpact(projectDir, args[0], args[1] || 'upstream'));
+  return callCjs('impact', () => cjs!.gitNexusImpact(projectDir, args[0], args[1] || 'upstream'));
 }
 
 export async function gitnexusDetectChanges(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusDetectChanges(projectDir, args[0] || 'unstaged'));
+  return callCjs('detect_changes', () => cjs!.gitNexusDetectChanges(projectDir, args[0] || 'unstaged'));
 }
 
 export async function gitnexusBuild(_args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusBuild(projectDir));
+  return callCjs('build', () => cjs!.gitNexusBuild(projectDir));
 }
 
 export async function gitnexusRename(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusRename(projectDir, args[0], args[1]));
+  return callCjs('rename', () => cjs!.gitNexusRename(projectDir, args[0], args[1]));
 }
 
 export async function gitnexusCypher(args: string[], projectDir: string) {
-  if (!cjs) return disabledResult();
-  return translateCjsResult(cjs.gitNexusCypher(projectDir, args[0]));
+  return callCjs('cypher', () => cjs!.gitNexusCypher(projectDir, args[0]));
 }
