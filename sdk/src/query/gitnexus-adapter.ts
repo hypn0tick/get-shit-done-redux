@@ -114,6 +114,12 @@ function callCjs(operation: GitNexusOperation, callback: () => CjsResponse) {
   }
 }
 
+function namedFlagValue(args: string[], flag: string) {
+  const flagIndex = args.indexOf(flag);
+  if (flagIndex === -1) return undefined;
+  return args[flagIndex + 1];
+}
+
 export async function gitnexusStatus(_args: string[], projectDir: string) {
   return callCjs('status', () => cjs!.gitNexusStatus(projectDir));
 }
@@ -127,11 +133,13 @@ export async function gitnexusContext(args: string[], projectDir: string) {
 }
 
 export async function gitnexusImpact(args: string[], projectDir: string) {
-  return callCjs('impact', () => cjs!.gitNexusImpact(projectDir, args[0], args[1] || 'upstream'));
+  const direction = namedFlagValue(args, '--direction') ?? args[1] ?? 'upstream';
+  return callCjs('impact', () => cjs!.gitNexusImpact(projectDir, args[0], direction));
 }
 
 export async function gitnexusDetectChanges(args: string[], projectDir: string) {
-  return callCjs('detect_changes', () => cjs!.gitNexusDetectChanges(projectDir, args[0] || 'unstaged'));
+  const scope = namedFlagValue(args, '--scope') ?? args[0] ?? 'unstaged';
+  return callCjs('detect_changes', () => cjs!.gitNexusDetectChanges(projectDir, scope));
 }
 
 export async function gitnexusBuild(_args: string[], projectDir: string) {

@@ -59,4 +59,32 @@ describe('gitnexus adapter', () => {
       message: 'GitNexus returned a malformed response.',
     });
   });
+
+  it('parses gitnexus impact direction flags', async () => {
+    const gitNexusImpact = vi.fn(() => ({ impactedCount: 1 }));
+    const adapter = await importAdapterWith({
+      ...cjsApiWith(() => ({ exists: true })),
+      gitNexusImpact,
+    });
+
+    await expect(
+      adapter.gitnexusImpact(['PhaseRunner', '--direction', 'downstream'], '/project'),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(gitNexusImpact).toHaveBeenCalledWith('/project', 'PhaseRunner', 'downstream');
+  });
+
+  it('parses gitnexus detect-changes scope flags', async () => {
+    const gitNexusDetectChanges = vi.fn(() => ({ changed_symbols: [] }));
+    const adapter = await importAdapterWith({
+      ...cjsApiWith(() => ({ exists: true })),
+      gitNexusDetectChanges,
+    });
+
+    await expect(
+      adapter.gitnexusDetectChanges(['--scope', 'staged'], '/project'),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(gitNexusDetectChanges).toHaveBeenCalledWith('/project', 'staged');
+  });
 });
