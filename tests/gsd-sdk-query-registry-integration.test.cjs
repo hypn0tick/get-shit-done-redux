@@ -87,6 +87,7 @@ function collectRegisteredNames() {
       aliases.PHASES_COMMAND_ALIASES,
       aliases.VALIDATE_COMMAND_ALIASES,
       aliases.ROADMAP_COMMAND_ALIASES,
+      aliases.GITNEXUS_COMMAND_ALIASES,
     ];
     for (const arr of familyArrays) {
       if (!Array.isArray(arr)) continue;

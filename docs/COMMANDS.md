@@ -1042,6 +1042,31 @@ Build, query, and inspect the project knowledge graph stored in `.planning/graph
 
 **Programmatic access:** `node gsd-tools.cjs graphify <build|query|status|diff|snapshot>` — see [CLI Tools Reference](CLI-TOOLS.md).
 
+### `/gsd-gitnexus`
+
+Query GitNexus code intelligence for graph-backed search, impact analysis, change detection, rename previews, and raw Cypher. Opt-in via `gitnexus.enabled: true` in `config.json`; when disabled, the command prints an activation hint and stops.
+
+| Subcommand | Description |
+|------------|-------------|
+| `build` | Build or rebuild the GitNexus index inline |
+| `query <term>` | Search execution flows related to a term |
+| `status` | Show index freshness and statistics |
+| `diff` | Render changed symbols and affected processes |
+| `context <symbol>` | Show callers, callees, and process participation |
+| `impact <target>` | Analyze upstream or downstream blast radius |
+| `detect-changes` | Return changed symbols and affected processes as JSON |
+| `rename <old> <new> [--dry-run]` | Run graph-backed rename; dry-run previews edits |
+| `cypher <query>` | Execute a raw Cypher query against the graph |
+
+```bash
+/gsd-gitnexus status
+/gsd-gitnexus query authentication
+/gsd-gitnexus impact PhaseRunner --direction downstream
+/gsd-gitnexus rename oldName newName --dry-run
+```
+
+**Programmatic access:** `node gsd-tools.cjs gitnexus <status|query|context|impact|detect-changes|build|rename|cypher>` and the matching GitNexus SDK query handlers — see [CLI Tools Reference](CLI-TOOLS.md).
+
 ---
 
 ## AI Integration Commands

@@ -605,6 +605,7 @@ The commands above cover the most common day-to-day flows. Every command listed 
 ### Knowledge & Context
 
 - **`/gsd:graphify [build|query <term>|status|diff]`** — Build, query, and inspect the project knowledge graph in `.planning/graphs/`.
+- **`/gsd:gitnexus [build|query <term>|status|diff|context <symbol>|impact <target>|detect-changes|rename <old> <new> [--dry-run]|cypher <query>]`** — Query GitNexus code intelligence and graph-backed refactoring data.
 - **`/gsd:thread [list [--open|--resolved] | close <slug> | status <slug> | name | description]`** — Manage persistent context threads for cross-session work.
 - **`/gsd:profile-user [--questionnaire] [--refresh]`** — Generate developer behavioral profile and create Claude-discoverable artifacts.
 - **`/gsd:stats`** — Display project statistics: phases, plans, requirements, git metrics, and timeline.

@@ -146,6 +146,7 @@ describe('feat-3598: command-aliases CJS and TS surfaces expose the same alias s
       'PHASES_COMMAND_ALIASES',
       'VALIDATE_COMMAND_ALIASES',
       'ROADMAP_COMMAND_ALIASES',
+      'GITNEXUS_COMMAND_ALIASES',
       'NON_FAMILY_COMMAND_ALIASES',
     ];
     const cjsCanonicals = new Set();
@@ -184,6 +185,7 @@ describe('feat-3598: command-aliases CJS and TS surfaces expose the same alias s
       'PHASES_COMMAND_ALIASES',
       'VALIDATE_COMMAND_ALIASES',
       'ROADMAP_COMMAND_ALIASES',
+      'GITNEXUS_COMMAND_ALIASES',
       'NON_FAMILY_COMMAND_ALIASES',
     ]) {
       for (const e of cjs[key]) for (const a of e.aliases || []) cjsAliases.add(a);
@@ -231,6 +233,7 @@ describe('feat-3598: live command registry has no duplicate aliases', () => {
       'PHASES_COMMAND_ALIASES',
       'VALIDATE_COMMAND_ALIASES',
       'ROADMAP_COMMAND_ALIASES',
+      'GITNEXUS_COMMAND_ALIASES',
       'NON_FAMILY_COMMAND_ALIASES',
     ]) {
       for (const e of cjs[key]) {
@@ -261,6 +264,7 @@ describe('feat-3598: live command registry has no duplicate aliases', () => {
       'PHASES_COMMAND_ALIASES',
       'VALIDATE_COMMAND_ALIASES',
       'ROADMAP_COMMAND_ALIASES',
+      'GITNEXUS_COMMAND_ALIASES',
       'NON_FAMILY_COMMAND_ALIASES',
     ]) {
       for (const e of cjs[key]) {

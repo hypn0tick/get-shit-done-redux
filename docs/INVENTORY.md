@@ -54,7 +54,7 @@ Full roster at `agents/gsd-*.md`. The "Primary doc" column flags whether [`docs/
 
 ---
 
-## Commands (67 shipped)
+## Commands (68 shipped)
 
 Full roster at `commands/gsd/*.md`. The groupings below mirror `docs/COMMANDS.md` section order; each row carries the command name, a one-line role derived from the command's frontmatter `description:`, and a link to the source file. `tests/command-count-sync.test.cjs` locks the count against the filesystem.
 
@@ -135,6 +135,7 @@ These six routers are descriptor-only entries that the model picks first; the bo
 |---------|------|--------|
 | `/gsd-map-codebase` | Analyze codebase with parallel mapper agents; use `--fast` for lightweight scan or `--query` for intel queries. | [commands/gsd/map-codebase.md](../commands/gsd/map-codebase.md) |
 | `/gsd-graphify` | Build, query, and inspect the project knowledge graph in `.planning/graphs/`. | [commands/gsd/graphify.md](../commands/gsd/graphify.md) |
+| `/gsd-gitnexus` | Query GitNexus code intelligence — status, query, impact, diff, build, rename, and cypher. | [commands/gsd/gitnexus.md](../commands/gsd/gitnexus.md) |
 | `/gsd-extract-learnings` | Extract decisions, lessons, patterns, and surprises from completed phase artifacts. | [commands/gsd/extract-learnings.md](../commands/gsd/extract-learnings.md) |
 
 ### Review, Debug & Recovery
@@ -262,7 +263,7 @@ Full roster at `get-shit-done/workflows/*.md`. Workflows are thin orchestrators 
 
 ---
 
-## References (61 shipped)
+## References (62 shipped)
 
 Full roster at `get-shit-done/references/*.md`. References are shared knowledge documents that workflows and agents `@-reference`. The groupings below match [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#references-get-shit-donereferencesmd) — core, workflow, thinking-model clusters, and the modular planner decomposition.
 
@@ -278,6 +279,7 @@ Full roster at `get-shit-done/references/*.md`. References are shared knowledge 
 | `verification-overrides.md` | Per-artifact verification override rules. |
 | `planning-config.md` | Full config schema and behavior. |
 | `git-integration.md` | Git commit, branching, and history patterns. |
+| `gitnexus-methodology.md` | GitNexus methodology guardrails for graph-backed exploration, validation, and fallback behavior. |
 | `git-planning-commit.md` | Planning directory commit conventions. |
 | `questioning.md` | Dream-extraction philosophy for project initialization. |
 | `tdd.md` | Test-driven development integration patterns. |
@@ -390,6 +392,7 @@ Full listing: `get-shit-done/bin/lib/*.cjs`.
 | `fallow-runner.cjs` | Fallow audit adapter for `/gsd-code-review`: binary resolution (`PATH` then `node_modules/.bin`), actionable missing-binary errors, and structural findings normalization |
 | `frontmatter.cjs` | YAML frontmatter CRUD operations |
 | `gap-checker.cjs` | Post-planning gap analysis (#2493): unified REQUIREMENTS.md + CONTEXT.md decisions vs PLAN.md coverage report (`gsd-tools gap-analysis`) |
+| `gitnexus.cjs` | GitNexus status/query/context/impact/detect-changes/build/rename/cypher integration for `/gsd-gitnexus` |
 | `graphify.cjs` | Knowledge-graph build/query/status/diff for `/gsd-graphify` |
 | `gsd2-import.cjs` | External-plan ingest for `/gsd-import --from-gsd2` |
 | `init-command-router.cjs` | Thin CJS subcommand router adapter for `gsd-tools init` |
@@ -446,7 +449,7 @@ Full listing: `get-shit-done/bin/lib/*.cjs`.
 
 ---
 
-## Hooks (13 shipped)
+## Hooks (14 shipped)
 
 Full listing: `hooks/`.
 
@@ -464,6 +467,7 @@ Full listing: `hooks/`.
 | `gsd-session-state.sh` | `PostToolUse` | Session-state tracking for shell-based runtimes |
 | `gsd-validate-commit.sh` | `PostToolUse` | Commit validation for conventional-commit enforcement |
 | `gsd-phase-boundary.sh` | `PostToolUse` | Phase-boundary detection for workflow transitions |
+| `gsd-gitnexus-update.sh` | `PostToolUse` | Auto-rebuild GitNexus index after configured triggers (opt-in, default off) |
 | `gsd-graphify-update.sh` | `PostToolUse` | Auto-rebuild knowledge graph after main HEAD advances (opt-in, default off — #3347) |
 
 ---

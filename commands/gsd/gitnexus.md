@@ -1,6 +1,6 @@
 ---
 name: gsd:gitnexus
-description: "Query code intelligence via GitNexus -- status, query, context, impact, detect-changes, diff, build, rename, cypher"
+description: "Query GitNexus code intelligence: status, query, impact, diff, build, rename, cypher"
 argument-hint: "[build|query <term>|status|diff|context <symbol>|impact <target>|detect-changes|rename <old> <new> [--dry-run]|cypher <query>]"
 allowed-tools:
   - Read
@@ -10,7 +10,7 @@ requires: [config, fast, phase, update]
 
 **STOP -- DO NOT READ THIS FILE. You are already reading it. This prompt was injected into your context by Claude Code's command system. Using the Read tool on this file wastes tokens. Begin executing Step 0 immediately.**
 
-**CJS-only (gitnexus):** `gitnexus` subcommands are not registered on `gsd-sdk query`. Use `node $HOME/.claude/get-shit-done/bin/gsd-tools.cjs gitnexus …` as documented in this command and in `docs/CLI-TOOLS.md`. Other tooling may still use `gsd-sdk query` where a handler exists.
+**CLI and SDK access (gitnexus):** This command runs inline through `node $HOME/.claude/get-shit-done/bin/gsd-tools.cjs gitnexus ...`; programmatic callers may use the matching GitNexus SDK query handlers documented in `docs/CLI-TOOLS.md`.
 
 ## Step 0 -- Banner
 

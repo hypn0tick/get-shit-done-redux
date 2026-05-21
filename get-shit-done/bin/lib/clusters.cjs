@@ -49,6 +49,7 @@ const CLUSTERS = Object.freeze({
     'spike',
     'forensics',
     'explore',
+    'gitnexus',
     'graphify',
     'ns-ideate',
   ]),
