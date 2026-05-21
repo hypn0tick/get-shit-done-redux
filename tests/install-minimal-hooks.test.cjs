@@ -593,6 +593,113 @@ describe('#1755: .sh hooks are copied and executable after install', () => {
   });
 });
 
+// ── GitNexus hook build + install integration ────────────────────────────────
+describe('GitNexus hook build output', () => {
+  before(() => {
+    execFileSync(process.execPath, [BUILD_SCRIPT], { encoding: 'utf-8', stdio: 'pipe' });
+  });
+
+  test('hooks/dist/gsd-gitnexus-update.sh exists after build', () => {
+    assert.ok(
+      fs.existsSync(path.join(HOOKS_DIST, 'gsd-gitnexus-update.sh')),
+      'expected hooks/dist/gsd-gitnexus-update.sh to exist after build'
+    );
+  });
+
+  test('hooks/dist/lib/gsd-gitnexus-rebuild.sh exists after build', () => {
+    assert.ok(
+      fs.existsSync(path.join(HOOKS_DIST, 'lib', 'gsd-gitnexus-rebuild.sh')),
+      'expected hooks/dist/lib/gsd-gitnexus-rebuild.sh to exist after build'
+    );
+  });
+});
+
+describe('GitNexus hooks deployed by install', () => {
+  function gitnexusInstallTarget() {
+    const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-gitnexus-install-'));
+    spawnSync(
+      process.execPath,
+      [INSTALL_SCRIPT, '--claude', '--global', '--config-dir', targetDir, '--yes', '--no-sdk'],
+      { encoding: 'utf8', env: installerEnv() },
+    );
+    return targetDir;
+  }
+
+  test('hooks/gsd-gitnexus-update.sh present at install target', () => {
+    const targetDir = gitnexusInstallTarget();
+    try {
+      const dest = path.join(targetDir, 'hooks', 'gsd-gitnexus-update.sh');
+      assert.ok(fs.existsSync(dest), `expected ${dest} to exist after install`);
+    } finally {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  test('hooks/lib/gsd-gitnexus-rebuild.sh present at install target', () => {
+    const targetDir = gitnexusInstallTarget();
+    try {
+      const dest = path.join(targetDir, 'hooks', 'lib', 'gsd-gitnexus-rebuild.sh');
+      assert.ok(fs.existsSync(dest), `expected ${dest} to exist after install`);
+    } finally {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  test('installer registers GitNexus auto-update PostToolUse hook', () => {
+    const targetDir = gitnexusInstallTarget();
+    try {
+      const settingsPath = path.join(targetDir, 'settings.json');
+      assert.ok(fs.existsSync(settingsPath), 'expected settings.json to exist after install');
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const postToolUse = settings.hooks && settings.hooks.PostToolUse;
+      assert.ok(Array.isArray(postToolUse), 'expected settings.hooks.PostToolUse array');
+      const gitnexusEntry = postToolUse.find((entry) =>
+        Array.isArray(entry.hooks) &&
+        entry.hooks.some((hook) =>
+          hook.type === 'command' &&
+          typeof hook.command === 'string' &&
+          hook.command.includes('gsd-gitnexus-update.sh') &&
+          hook.timeout === 5
+        )
+      );
+      assert.ok(gitnexusEntry, 'expected a PostToolUse command hook for gsd-gitnexus-update.sh');
+      for (const toolName of [
+        'Bash',
+        'mcp__gitnexus__query',
+        'mcp__gitnexus__context',
+        'mcp__gitnexus__impact',
+        'mcp__gitnexus__detect_changes',
+      ]) {
+        assert.match(gitnexusEntry.matcher, new RegExp(`(^|\\|)${toolName}(\\||$)`));
+      }
+    } finally {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  test('installer does not warn about missing gsd-gitnexus-update.sh', () => {
+    const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-gitnexus-install-'));
+    try {
+      const proc = spawnSync(
+        process.execPath,
+        [INSTALL_SCRIPT, '--claude', '--global', '--config-dir', targetDir, '--yes', '--no-sdk'],
+        { encoding: 'utf8', env: installerEnv() },
+      );
+      const stdout = proc.stdout || '';
+      assert.ok(
+        !stdout.includes('Missing expected hook: gsd-gitnexus-update.sh'),
+        `installer must not warn about missing GitNexus hook; got:\n${stdout}`
+      );
+      assert.ok(
+        !stdout.includes('Skipped GitNexus auto-update hook - gsd-gitnexus-update.sh not found'),
+        `installer must not skip GitNexus hook configuration; got:\n${stdout}`
+      );
+    } finally {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('install.js source correctness', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'bin', 'install.js'), 'utf8');
 
@@ -647,6 +754,51 @@ describe('install.js source correctness', () => {
     const block = src.substring(uninstallStart, uninstallEnd);
     assert.strictEqual((block.match(/else if \(isCursor\)/g) || []).length, 0);
     assert.strictEqual((block.match(/else if \(isWindsurf\)/g) || []).length, 0);
+  });
+
+  test('hooks/lib helper allowlist includes GitNexus rebuild helper', () => {
+    const allowlistMatch = src.match(/const GSD_HOOK_LIB_FILES\s*=\s*\[([^\]]+)\]/);
+    assert.ok(allowlistMatch, 'GSD_HOOK_LIB_FILES array should exist');
+    assert.ok(
+      allowlistMatch[1].includes('gsd-gitnexus-rebuild.sh'),
+      'GSD_HOOK_LIB_FILES should include gsd-gitnexus-rebuild.sh'
+    );
+  });
+
+  test('Codex shell hooks include Graphify/GitNexus hooks and lib helpers when capabilities pass', () => {
+    const codexBlockStart = src.indexOf('const CODEX_HOOKS_TO_COPY');
+    const codexBlockEnd = src.indexOf('// Add Codex hooks', codexBlockStart);
+    assert.ok(codexBlockStart !== -1 && codexBlockEnd !== -1, 'Codex hook copy block should exist');
+    const codexHookCopyBlock = src.slice(codexBlockStart, codexBlockEnd);
+
+    assert.ok(
+      codexHookCopyBlock.includes('gsd-graphify-update.sh'),
+      'Codex hook copy allowlist should include gsd-graphify-update.sh when shell-hook capabilities pass'
+    );
+    assert.ok(
+      codexHookCopyBlock.includes('gsd-gitnexus-update.sh'),
+      'Codex hook copy allowlist should include gsd-gitnexus-update.sh when shell-hook capabilities pass'
+    );
+    assert.ok(
+      codexHookCopyBlock.includes('copyLibDir') || codexHookCopyBlock.includes('GSD_HOOK_LIB_FILES'),
+      'Codex hook copy block should copy hooks/lib helpers for shell hooks'
+    );
+    assert.ok(
+      !codexHookCopyBlock.includes('deliberately do *not* copy'),
+      'Codex hook copy block should no longer document Graphify/GitNexus as excluded shell hooks'
+    );
+  });
+
+  test('Codex shell-hook capability failure path warns and skips shell hooks', () => {
+    const codexBlockStart = src.indexOf('// Copy only the hook files that Codex actually registers');
+    const codexBlockEnd = src.indexOf('if (isCopilot)', codexBlockStart);
+    assert.ok(codexBlockStart !== -1 && codexBlockEnd !== -1, 'Codex install block should exist');
+    const codexInstallBlock = src.slice(codexBlockStart, codexBlockEnd);
+
+    assert.ok(
+      codexInstallBlock.includes('Bash executable path unavailable'),
+      'Codex install should warn and skip Graphify/GitNexus shell hooks when Bash capability checks fail'
+    );
   });
 });
 

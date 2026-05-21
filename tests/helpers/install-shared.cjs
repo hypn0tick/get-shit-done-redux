@@ -22,6 +22,8 @@ const EXPECTED_SH_HOOKS = [
   'gsd-session-state.sh',
   'gsd-validate-commit.sh',
   'gsd-phase-boundary.sh',
+  'gsd-graphify-update.sh',
+  'gsd-gitnexus-update.sh',
 ];
 
 const EXPECTED_ALL_HOOKS = [
