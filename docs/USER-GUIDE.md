@@ -43,7 +43,7 @@ v1.40 ships six **namespace meta-skills** as the first-stage entry points for hi
 | Phase pipeline | `/gsd-workflow` | discuss / plan / execute / verify / phase / progress |
 | Project lifecycle | `/gsd-project` | milestones, audits, summary |
 | Quality gates | `/gsd-quality` | code review, debug, audit, security, eval, ui |
-| Codebase intelligence | `/gsd-context` | map, graphify, docs, learnings |
+| Codebase intelligence | `/gsd-context` | map, gitnexus, graphify, docs, learnings |
 | Management | `/gsd-manage` | config, workspace, workstreams, thread, update, ship, inbox |
 | Exploration & capture | `/gsd-ideate` | explore, sketch, spike, spec, capture |
 
@@ -1072,7 +1072,7 @@ Each workspace gets:
 
 For automation and copy-paste from docs, prefer **`gsd-sdk query`** with a registered subcommand (see [CLI-TOOLS.md — SDK and programmatic access](CLI-TOOLS.md#sdk-and-programmatic-access) and [QUERY-HANDLERS.md](../sdk/src/query/QUERY-HANDLERS.md)). The legacy `node $HOME/.claude/get-shit-done/bin/gsd-tools.cjs` CLI remains supported for dual-mode operation.
 
-**CLI-only (not in the query registry):** **graphify**, **from-gsd2** / **gsd2-import** — call `gsd-tools.cjs` (see [QUERY-HANDLERS.md](../sdk/src/query/QUERY-HANDLERS.md)). **Two different `state` JSON shapes in the legacy CLI:** `state json` (frontmatter rebuild) vs `state load` (`config` + `state_raw` + flags). **`gsd-sdk query` today:** both `state.json` and `state.load` resolve to the frontmatter-rebuild handler — use `node …/gsd-tools.cjs state load` when you need the CJS `state load` shape. See [CLI-TOOLS.md](CLI-TOOLS.md#sdk-and-programmatic-access) and QUERY-HANDLERS.
+**CLI-only (not in the query registry):** **graphify**, **from-gsd2** / **gsd2-import** — call `gsd-tools.cjs` (see [QUERY-HANDLERS.md](../sdk/src/query/QUERY-HANDLERS.md)). **GitNexus is registered:** use `gsd-sdk query gitnexus.status`, `gitnexus.query`, `gitnexus.context`, `gitnexus.impact`, `gitnexus.detect-changes`, `gitnexus.build`, `gitnexus.rename`, or `gitnexus.cypher` when `gitnexus.enabled` is true. **Two different `state` JSON shapes in the legacy CLI:** `state json` (frontmatter rebuild) vs `state load` (`config` + `state_raw` + flags). **`gsd-sdk query` today:** both `state.json` and `state.load` resolve to the frontmatter-rebuild handler — use `node …/gsd-tools.cjs state load` when you need the CJS `state load` shape. See [CLI-TOOLS.md](CLI-TOOLS.md#sdk-and-programmatic-access) and QUERY-HANDLERS.
 
 ### STATE.md Out of Sync
 

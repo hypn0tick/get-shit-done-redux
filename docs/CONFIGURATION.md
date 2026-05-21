@@ -469,14 +469,29 @@ Toggle optional capabilities via the `features.*` config namespace. Feature flag
 <a id="gitnexus-settings"></a>
 ### GitNexus Settings
 
+GitNexus is an opt-in code intelligence provider. When enabled and available,
+GSD agents and SDK callers prefer GitNexus for graph-backed exploration,
+context, impact, and change detection; Graphify remains the fallback when
+GitNexus is disabled or unavailable.
+
+```bash
+# Enable GitNexus and build the initial index
+gsd-sdk query config-set gitnexus.enabled true
+/gsd-gitnexus build
+
+# Optional: enable detached index refreshes after configured triggers
+gsd-sdk query config-set gitnexus.auto_update true
+gsd-sdk query config-set gitnexus.auto_update_triggers '["commit"]'
+```
+
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `gitnexus.enabled` | boolean | `false` | Enable GitNexus code intelligence integration. When disabled, GitNexus commands return structured disabled responses instead of invoking the CLI. |
-| `gitnexus.use_wsl` | boolean or `"auto"` | `"auto"` | Controls whether GitNexus CLI calls route through WSL on Windows. |
+| `gitnexus.use_wsl` | boolean or `"auto"` | `"auto"` | Controls whether GitNexus CLI calls route through WSL on Windows. `"auto"` uses WSL on Windows when available and runs the configured CLI directly on non-Windows platforms. |
 | `gitnexus.cli_path` | string | `"gitnexus"` | CLI executable path used for GitNexus commands. |
-| `gitnexus.auto_update` | boolean | `false` | Opt into GitNexus index auto-update hooks. Enabling this setting does not immediately rebuild the index; the next configured trigger does. |
-| `gitnexus.auto_update_triggers` | string[] | `["commit"]` | Events that may trigger a GitNexus auto-update rebuild. Allowed values: `commit`, `mcp_query`, `mcp_context`, `mcp_impact`, and `mcp_detect_changes`. The default is commit-only. |
-| `gitnexus.skills` | boolean | `false` | Enable GitNexus-backed generated skill integration where supported. |
+| `gitnexus.auto_update` | boolean | `false` | Opt into GitNexus index auto-update hooks. Enabling this setting does not immediately rebuild the index; the next configured trigger does. Rebuild status is written to `.gitnexus/.last-build-status.json`. |
+| `gitnexus.auto_update_triggers` | string[] | `["commit"]` | Events that may trigger a GitNexus auto-update rebuild. Allowed values: `commit`, `mcp_query`, `mcp_context`, `mcp_impact`, and `mcp_detect_changes`. The default is commit-only; MCP triggers are opt-in. |
+| `gitnexus.skills` | boolean | `false` | Reserved for GitNexus-backed skill integration where supported. Current GSD agent guidance uses the shared `gitnexus-methodology.md` reference instead of generated per-project skills. |
 | `gitnexus.budget.query` | number | `2000` | Token budget for GitNexus query responses. |
 | `gitnexus.budget.context` | number | `1500` | Token budget for GitNexus context responses. |
 | `gitnexus.budget.impact` | number | `1000` | Token budget for GitNexus impact responses. |
@@ -489,6 +504,11 @@ Toggle optional capabilities via the `features.*` config namespace. Feature flag
 | `gitnexus.detect_changes_timeout_ms` | number | `180000` | Timeout for GitNexus detect-changes subprocess calls. |
 | `gitnexus.replace_grep_exploration` | boolean | `false` | When `false`, agents use GitNexus first and validate with grep/direct reads. When `true`, agents use GitNexus for code exploration and reserve grep for exact text, replacement, and verification tasks. |
 | `gitnexus.embeddings` | boolean or `"auto"` | `"auto"` | Controls optional GitNexus embedding behavior where supported by the local CLI/index. |
+
+`/gsd-gitnexus build` runs in the foreground with the command timeout defined
+by the command implementation. There is not currently a registered
+`config-set` key for changing that build timeout; the registered timeout keys
+above apply to query, context, impact, and detect-changes subprocess calls.
 
 #### Multi-developer setup
 

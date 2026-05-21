@@ -84,6 +84,20 @@ text (unstable).
 | `graphify_no_graph` | Graphify query or diff when no graph has been built |
 | `graphify_invalid_query` | Graphify query with a malformed query string |
 
+### GitNexus errors
+
+| Code | When emitted |
+|------|-------------|
+| `disabled` | GitNexus operation when `gitnexus.enabled` is not `true` |
+| `gitnexus_not_found` | Configured GitNexus CLI cannot be found |
+| `gitnexus_timed_out` | GitNexus subprocess exceeds the configured timeout |
+| `gitnexus_cli_error` | GitNexus command exits non-zero or returns unparseable output |
+| `no_index` | Status or query operation cannot find a GitNexus index |
+| `wsl_not_available` | Windows WSL passthrough is requested or auto-selected, but `wsl` is unavailable |
+| `wsl_command_failed` | WSL is available, but the proxied GitNexus command fails |
+| `wsl_distro_missing` | WSL is installed but no usable distro is available |
+| `unsupported_tool` | The configured GitNexus CLI does not support the requested advanced operation, such as rename |
+
 ### Hook / security errors
 
 | Code | When emitted |

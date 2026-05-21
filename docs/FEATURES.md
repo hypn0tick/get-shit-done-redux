@@ -144,6 +144,7 @@
   - [Agent Size-Budget Enforcement](#119-agent-size-budget-enforcement)
   - [Shared Boilerplate Extraction](#120-shared-boilerplate-extraction)
   - [Knowledge Graph Integration](#121-knowledge-graph-integration)
+  - [GitNexus Native Integration](#1211-gitnexus-native-integration)
 - [v1.40.0 Features](#v1400-features)
   - [Skill Surface Consolidation](#122-skill-surface-consolidation)
   - [Namespace Meta-Skills (Two-Stage Routing)](#123-namespace-meta-skills-two-stage-routing)
@@ -2628,6 +2629,24 @@ Users who run a memory / knowledge-base MCP server (for example, ExoCortex-style
 
 ---
 
+### 121.1 GitNexus Native Integration
+
+**Purpose:** Integrate GitNexus as a first-class code intelligence provider for graph-backed search, context, impact analysis, change detection, rename previews, and raw Cypher. GitNexus is preferred when enabled and available; Graphify remains the fallback for projects that have not enabled GitNexus or cannot run it locally.
+
+**Requirements:**
+- REQ-GITNEXUS-01: Opt-in via `gitnexus.enabled: true` in `.planning/config.json`. When disabled, `/gsd-gitnexus` and programmatic handlers return structured disabled responses instead of invoking the CLI.
+- REQ-GITNEXUS-02: Slash-command `/gsd-gitnexus` exposes `build`, `query <term>`, `status`, `diff`, `context <symbol>`, `impact <target>`, `detect-changes`, `rename <old> <new> [--dry-run]`, and `cypher <query>`.
+- REQ-GITNEXUS-03: Programmatic access is available through `node gsd-tools.cjs gitnexus ...` and the SDK query family `gsd-sdk query gitnexus.*`, including space-delimited aliases such as `gitnexus status`.
+- REQ-GITNEXUS-04: Windows calls support WSL passthrough via `gitnexus.use_wsl` (`true`, `false`, or `"auto"`), with clear WSL diagnostics when WSL or a distro is unavailable.
+- REQ-GITNEXUS-05: Auto-update is opt-in via `gitnexus.auto_update: true` and trigger-controlled through `gitnexus.auto_update_triggers` (`commit`, `mcp_query`, `mcp_context`, `mcp_impact`, `mcp_detect_changes`). Rebuild status is written under `.gitnexus/`.
+- REQ-GITNEXUS-06: Agent guidance is centralized in `gitnexus-methodology.md`; `gitnexus.replace_grep_exploration` controls whether GitNexus supplements or replaces grep-style exploration.
+- REQ-GITNEXUS-07: Token budgets are configurable for query, context, impact, detect-changes, rename, and cypher responses; subprocess timeout keys are registered for query, context, impact, and detect-changes.
+
+**Configuration:** `gitnexus.enabled`, `gitnexus.use_wsl`, `gitnexus.cli_path`, `gitnexus.auto_update`, `gitnexus.auto_update_triggers`, `gitnexus.budget.*`, `gitnexus.query_timeout_ms`, `gitnexus.context_timeout_ms`, `gitnexus.impact_timeout_ms`, `gitnexus.detect_changes_timeout_ms`, `gitnexus.replace_grep_exploration`, `gitnexus.embeddings`
+**Reference files:** `commands/gsd/gitnexus.md`, `get-shit-done/bin/lib/gitnexus.cjs`, `get-shit-done/references/gitnexus-methodology.md`
+
+---
+
 ## v1.40.0 Features
 
 ### 122. Skill Surface Consolidation
@@ -2656,7 +2675,7 @@ Users who run a memory / knowledge-base MCP server (for example, ExoCortex-style
 - `/gsd-workflow` — phase pipeline router (discuss / plan / execute / verify / phase / progress)
 - `/gsd-project` — project lifecycle (milestones, audits, summary)
 - `/gsd-quality` — quality gates (code review, debug, audit, security, eval, ui)
-- `/gsd-context` — codebase intelligence (map, graphify, docs, learnings)
+- `/gsd-context` — codebase intelligence (map, gitnexus, graphify, docs, learnings)
 - `/gsd-manage` — config / workspace / workstreams / thread / update / ship / inbox
 - `/gsd-ideate` — exploration & capture (explore, sketch, spike, spec, capture)
 

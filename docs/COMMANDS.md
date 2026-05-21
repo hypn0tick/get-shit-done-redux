@@ -23,7 +23,7 @@ Six namespace routers ship as the first-stage entry points in v1.40. They keep t
 | `/gsd-workflow` | Phase pipeline — discuss / plan / execute / verify / phase / progress |
 | `/gsd-project` | Project lifecycle — milestones, audits, summary |
 | `/gsd-quality` | Quality gates — code review, debug, audit, security, eval, ui |
-| `/gsd-context` | Codebase intelligence — map, graphify, docs, learnings |
+| `/gsd-context` | Codebase intelligence — map, gitnexus, graphify, docs, learnings |
 | `/gsd-manage` | Management — config, workspace, workstreams, thread, update, ship, inbox |
 | `/gsd-ideate` | Exploration & capture — explore, sketch, spike, spec, capture |
 
@@ -928,7 +928,7 @@ Interactive configuration of workflow toggles and model profile. Questions are g
 - **Planning** — Research, Plan Checker, Pattern Mapper, Nyquist, UI Phase, UI Gate, AI Phase
 - **Execution** — Verifier, TDD Mode, Code Review, Code Review Depth _(conditional — only when Code Review is on)_, UI Review
 - **Docs & Output** — Commit Docs, Skip Discuss, Worktrees
-- **Features** — Intel, Graphify
+- **Features** — Intel, Graphify, GitNexus
 - **Model & Pipeline** — Model Profile, Auto-Advance, Branching
 - **Misc** — Context Warnings, Research Qs
 
@@ -958,7 +958,7 @@ Configure GSD settings interactively — workflow toggles, advanced knobs, integ
 | Discussion Tuning | `workflow.max_discuss_passes` |
 | Cross-AI Execution | `workflow.cross_ai_execution`, `workflow.cross_ai_command`, `workflow.cross_ai_timeout` |
 | Git Customization | `git.base_branch`, `git.phase_branch_template`, `git.milestone_branch_template` |
-| Runtime / Output | `response_language`, `context_window`, `search_gitignored`, `graphify.build_timeout` |
+| Runtime / Output | `response_language`, `context_window`, `search_gitignored`, `graphify.build_timeout`, `gitnexus.use_wsl`, `gitnexus.replace_grep_exploration` |
 
 All answers merge via `gsd-sdk query config-set`, preserving unrelated keys. API keys are masked (`****<last-4>`) in all output.
 
@@ -1044,7 +1044,7 @@ Build, query, and inspect the project knowledge graph stored in `.planning/graph
 
 ### `/gsd-gitnexus`
 
-Query GitNexus code intelligence for graph-backed search, impact analysis, change detection, rename previews, and raw Cypher. Opt-in via `gitnexus.enabled: true` in `config.json`; when disabled, the command prints an activation hint and stops.
+Query GitNexus code intelligence for graph-backed search, impact analysis, change detection, rename previews, and raw Cypher. Opt-in via `gitnexus.enabled: true` in `config.json` (see [Configuration Reference](CONFIGURATION.md#gitnexus-settings)); when disabled, the command prints an activation hint and stops. When GitNexus is enabled and available, agents prefer it for code intelligence and use Graphify as fallback when GitNexus cannot answer.
 
 | Subcommand | Description |
 |------------|-------------|

@@ -12,7 +12,7 @@
 |                    |                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Shipped path**   | `get-shit-done/bin/gsd-tools.cjs`                                                                                                                                                                      |
-| **Implementation** | 20 domain modules under `get-shit-done/bin/lib/` (the directory is authoritative)                                                                                                                        |
+| **Implementation** | 21 domain modules under `get-shit-done/bin/lib/` (the directory is authoritative)                                                                                                                        |
 | **Status**         | Maintained for parity tests and CJS-only entrypoints; `gsd-sdk query` / SDK registry are the supported path for new orchestration (see [QUERY-HANDLERS.md](../sdk/src/query/QUERY-HANDLERS.md)). |
 
 
@@ -64,7 +64,7 @@ Use this when authoring workflows, not when you only need the command list below
 
 **SDK state reads:** `state.json` and `state.load` are both registered query handlers with parity coverage. You can invoke them through `gsd-sdk query …` and through the SDK Runtime Bridge (`GSDTools` → `sdk/src/query-runtime-bridge.ts`), honoring `allowFallbackToSubprocess` / `strictSdk` and emitting `onDispatchEvent` observability. For direct typed dispatch, use `createRegistry()` from `sdk/src/query/index.ts`. Full routing and golden rules: [QUERY-HANDLERS.md](../sdk/src/query/QUERY-HANDLERS.md).
 
-**CLI-only (not in registry):** e.g. **graphify**, **from-gsd2** / **gsd2-import** — call `gsd-tools.cjs` until registered.
+**CLI-only (not in registry):** e.g. **graphify**, **from-gsd2** / **gsd2-import** — call `gsd-tools.cjs` until registered. GitNexus is registered in the SDK query layer; prefer `gsd-sdk query gitnexus.*` for automation.
 
 **Mutation events (SDK):** `QUERY_MUTATION_COMMANDS` in `sdk/src/query/index.ts` lists commands that may emit structured events after a successful dispatch. Exceptions called out in QUERY-HANDLERS: `state validate` (read-only), `skill-manifest` (writes only with `--write`), `intel update` (stub).
 
@@ -461,6 +461,53 @@ User-facing entry point: `/gsd-graphify` (see [Command Reference](COMMANDS.md#gs
 
 ---
 
+## GitNexus
+
+Query GitNexus code intelligence for graph-backed search, context, impact,
+change detection, rename previews, and raw Cypher. Requires
+`gitnexus.enabled: true` in `config.json` (see [Configuration Reference](CONFIGURATION.md#gitnexus-settings)).
+Unlike Graphify, GitNexus is registered in the SDK query layer.
+
+```bash
+# Show index freshness, statistics, and rebuild status
+gsd-sdk query gitnexus.status
+node gsd-tools.cjs gitnexus status
+
+# Search execution flows related to a term
+gsd-sdk query gitnexus.query authentication
+node gsd-tools.cjs gitnexus query authentication
+
+# Show callers, callees, and process participation for a symbol
+gsd-sdk query gitnexus.context PhaseRunner
+node gsd-tools.cjs gitnexus context PhaseRunner
+
+# Analyze blast radius; direction defaults to upstream when omitted
+gsd-sdk query gitnexus.impact PhaseRunner --direction downstream
+node gsd-tools.cjs gitnexus impact PhaseRunner --direction downstream
+
+# Detect changed symbols and affected processes
+gsd-sdk query gitnexus.detect-changes --scope staged
+node gsd-tools.cjs gitnexus detect-changes --scope staged
+
+# Preflight an index build; /gsd-gitnexus build runs the foreground build
+gsd-sdk query gitnexus.build
+node gsd-tools.cjs gitnexus build
+
+# Preview graph-backed rename support where the configured CLI provides it
+gsd-sdk query gitnexus.rename oldName newName
+node gsd-tools.cjs gitnexus rename oldName newName --dry-run
+
+# Execute a raw Cypher query as one argument
+gsd-sdk query gitnexus.cypher "MATCH (n) RETURN n LIMIT 5"
+node gsd-tools.cjs gitnexus cypher "MATCH (n) RETURN n LIMIT 5"
+```
+
+The SDK family accepts dotted and space-delimited aliases, for example
+`gsd-sdk query gitnexus.status` and `gsd-sdk query gitnexus status`.
+User-facing entry point: `/gsd-gitnexus` (see [Command Reference](COMMANDS.md#gsd-gitnexus)).
+
+---
+
 ## Module Architecture
 
 | Module | File | Exports |
@@ -482,6 +529,7 @@ User-facing entry point: `/gsd-graphify` (see [Command Reference](COMMANDS.md#gs
 | Profile Output | `lib/profile-output.cjs` | Developer profile formatting |
 | Profile Pipeline | `lib/profile-pipeline.cjs` | Session analysis pipeline |
 | Graphify | `lib/graphify.cjs` | Knowledge graph build/query/status/diff/snapshot (backs `/gsd-graphify`) |
+| GitNexus | `lib/gitnexus.cjs` | GitNexus status/query/context/impact/detect-changes/build/rename/cypher integration (backs `/gsd-gitnexus`) |
 | Learnings | `lib/learnings.cjs` | Extract learnings from phases/SUMMARY artifacts (backs `/gsd-extract-learnings`) |
 | Audit | `lib/audit.cjs` | Phase/milestone audit queue handlers; `audit-open` helper |
 | GSD2 Import | `lib/gsd2-import.cjs` | Reverse-migration importer from GSD-2 projects (backs `/gsd-import --from-gsd2`) |
