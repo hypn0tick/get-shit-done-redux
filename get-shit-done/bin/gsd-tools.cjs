@@ -1322,9 +1322,9 @@ async function runCommand(command, args, cwd, raw, defaultValue, originalCommand
         const oldName = args[2];
         const newName = args[3];
         if (!oldName || !newName) error('Usage: gsd-tools gitnexus rename <old> <new>', ERROR_REASON.USAGE);
-        core.output(gitnexus.gitNexusRename(cwd, oldName, newName), raw);
+        core.output(gitnexus.gitNexusRename(cwd, oldName, newName, { dryRun: args.includes('--dry-run') }), raw);
       } else if (subcommand === 'cypher') {
-        const query = args[2];
+        const query = args.slice(2).join(' ');
         if (!query) error('Usage: gsd-tools gitnexus cypher <query>', ERROR_REASON.USAGE);
         core.output(gitnexus.gitNexusCypher(cwd, query), raw);
       } else {

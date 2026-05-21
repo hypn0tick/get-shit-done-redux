@@ -101,10 +101,11 @@ const SAMPLE_META = {
 // ─── GITNEXUS_REASON enum (CJS-01) ──────────────────────────────────────────
 
 describe('GITNEXUS_REASON', () => {
-  test('has all 9 required enum values', () => {
+  test('has all required enum values', () => {
     const requiredReasons = [
       'OK', 'DISABLED', 'ENOENT', 'TIMEOUT', 'CLI_ERROR',
       'WSL_NOT_AVAILABLE', 'WSL_COMMAND_FAILED', 'WSL_DISTRO_MISSING', 'NO_INDEX',
+      'UNSUPPORTED_TOOL',
     ];
     for (const reason of requiredReasons) {
       assert.ok(GITNEXUS_REASON[reason], `GITNEXUS_REASON.${reason} must exist`);
@@ -1453,6 +1454,49 @@ describe('gitNexusRename', () => {
     assert.ok(Array.isArray(result.graph_edits));
   });
 
+  test('passes dry-run flag and repo selection to gitnexus rename', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, use_wsl: false });
+    let spawnedArgs = null;
+    mock.method(childProcess, 'spawnSync', (_program, args) => {
+      spawnedArgs = args;
+      return {
+        status: 0,
+        stdout: JSON.stringify({ dry_run: true, graph_edits: [], text_search_edits: [] }),
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName', { dryRun: true });
+
+    assert.strictEqual(result.dry_run, true);
+    assert.deepStrictEqual(spawnedArgs, [
+      'rename',
+      'oldName',
+      'newName',
+      '--dry-run',
+      '--repo',
+      path.basename(tmpDir),
+    ]);
+  });
+
+  test('returns unsupported-tool response when gitnexus rename is unavailable', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, use_wsl: false });
+    mock.method(childProcess, 'spawnSync', () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'error: unknown command "rename"',
+      error: undefined,
+      signal: null,
+    }));
+
+    const result = gitNexusRename(tmpDir, 'oldName', 'newName');
+
+    assert.strictEqual(result.reason, GITNEXUS_REASON.UNSUPPORTED_TOOL);
+    assert.match(result.message, /rename/i);
+  });
+
   test('returns error when current symbol name is missing', () => {
     const result = gitNexusRename(tmpDir, '', 'newName');
     assert.strictEqual(result.reason, GITNEXUS_REASON.CLI_ERROR);
@@ -1539,6 +1583,27 @@ describe('gitNexusCypher', () => {
     const result = gitNexusCypher(tmpDir, 'MATCH (n:Function) RETURN n.name LIMIT 5');
     assert.strictEqual(result.row_count, 1);
     assert.ok(result.markdown);
+  });
+
+  test('passes raw query as one argument with repo selection', () => {
+    writeGitNexusConfig(planningDir, { enabled: true, use_wsl: false });
+    const rawQuery = 'MATCH (n:Function {name: "a b"}) RETURN n.name, "$literal" LIMIT 5';
+    let spawnedArgs = null;
+    mock.method(childProcess, 'spawnSync', (_program, args) => {
+      spawnedArgs = args;
+      return {
+        status: 0,
+        stdout: JSON.stringify({ rows: [], row_count: 0 }),
+        stderr: '',
+        error: undefined,
+        signal: null,
+      };
+    });
+
+    const result = gitNexusCypher(tmpDir, rawQuery);
+
+    assert.strictEqual(result.row_count, 0);
+    assert.deepStrictEqual(spawnedArgs, ['cypher', rawQuery, '--repo', path.basename(tmpDir)]);
   });
 
   test('returns disabled response when gitnexus not enabled', () => {

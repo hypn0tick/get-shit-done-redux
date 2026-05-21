@@ -17,6 +17,7 @@ const GITNEXUS_REASON = Object.freeze({
   WSL_COMMAND_FAILED: 'wsl_command_failed',
   WSL_DISTRO_MISSING: 'wsl_distro_missing',
   NO_INDEX: 'no_index',
+  UNSUPPORTED_TOOL: 'unsupported_tool',
 });
 
 const GITNEXUS_TIMEOUT_DEFAULTS = Object.freeze({
@@ -191,6 +192,23 @@ function resolveGitNexusTimeout(config, operation, explicitTimeout) {
     return config[timeoutKey];
   }
   return GITNEXUS_TIMEOUT_DEFAULTS[op] || GITNEXUS_TIMEOUT_DEFAULTS.status;
+}
+
+function isUnsupportedGitNexusCommand(command, result) {
+  const output = `${result?.stderr || ''}\n${result?.stdout || ''}`.toLowerCase();
+  if (!command || !output) return false;
+  const commandLower = command.toLowerCase();
+  return (
+    output.includes(`unknown command "${commandLower}"`) ||
+    output.includes(`unknown command '${commandLower}'`) ||
+    output.includes(`unknown command ${commandLower}`) ||
+    output.includes(`unrecognized command "${commandLower}"`) ||
+    output.includes(`unrecognized command '${commandLower}'`) ||
+    output.includes(`unrecognized command ${commandLower}`) ||
+    output.includes(`no such command "${commandLower}"`) ||
+    output.includes(`no such command '${commandLower}'`) ||
+    output.includes(`no such command ${commandLower}`)
+  );
 }
 
 // ─── Output Parsing (D-13, RESEARCH Pitfall 2) ─────────────────────────────
@@ -812,9 +830,18 @@ function gitNexusRename(cwd, symbolName, newSymbolName, options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['rename', symbolName, newSymbolName, '--repo', repoName], { config });
+    const args = ['rename', symbolName, newSymbolName];
+    if (options.dryRun === true) args.push('--dry-run');
+    args.push('--repo', repoName);
+    const result = execGitNexus(cwd, args, { config, operation: 'rename' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
+      if (isUnsupportedGitNexusCommand('rename', result)) {
+        return {
+          reason: GITNEXUS_REASON.UNSUPPORTED_TOOL,
+          message: result.stderr || result.stdout || 'gitnexus rename is not supported by the configured GitNexus CLI',
+        };
+      }
       return { reason: result.reason, message: result.stderr || 'gitnexus rename failed' };
     }
 
@@ -851,7 +878,7 @@ function gitNexusCypher(cwd, query, options = {}) {
 
     const config = readGitNexusConfig(cwd);
     const repoName = path.basename(cwd);
-    const result = execGitNexus(cwd, ['cypher', query, '--repo', repoName], { config });
+    const result = execGitNexus(cwd, ['cypher', query, '--repo', repoName], { config, operation: 'cypher' });
 
     if (result.reason !== GITNEXUS_REASON.OK) {
       return { reason: result.reason, message: result.stderr || 'gitnexus cypher failed' };

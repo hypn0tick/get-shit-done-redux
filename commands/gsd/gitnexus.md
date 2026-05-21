@@ -1,7 +1,7 @@
 ---
 name: gsd:gitnexus
 description: "Query code intelligence via GitNexus -- status, query, context, impact, detect-changes, diff, build, rename, cypher"
-argument-hint: "[build|query <term>|status|diff|context <symbol>|impact <target>|detect-changes|rename <old> <new>|cypher <query>]"
+argument-hint: "[build|query <term>|status|diff|context <symbol>|impact <target>|detect-changes|rename <old> <new> [--dry-run]|cypher <query>]"
 allowed-tools:
   - Read
   - Bash
@@ -80,7 +80,8 @@ Modes:
   context <symbol>   360-degree view of a code symbol
   impact <target>    Blast radius analysis for a symbol
   detect-changes     Show changed symbols and affected processes
-  rename <old> <new> Stub: displays MCP tool suggestion (CLI lacks rename)
+  rename <old> <new> [--dry-run]
+                     Run GitNexus rename; dry-run previews edits
   cypher <query>     Execute a raw Cypher query against the graph
 ```
 
@@ -233,14 +234,18 @@ Parse the JSON output and display:
 Run:
 
 ```bash
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" gitnexus rename "<old>" "<new>"
+node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" gitnexus rename "<old>" "<new>" --dry-run
 ```
 
-The CJS function returns a structured error because the `gitnexus rename` CLI subcommand does not exist (RESEARCH A7). This mode is a stub in Phase 1.
+Parse the JSON output and display:
+- If `reason: "unsupported_tool"`, display that the configured GitNexus CLI does not support rename and **STOP**
+- If error, display the error message and **STOP**
+- Otherwise, display graph-backed edits first, then text-search edits, confidence, and any `dry_run` marker
+- Show budget truncation notice if `truncated: true`
 
-Display the error message explaining that rename is available via the `gitnexus_rename` MCP tool directly, and suggest using that instead. Full rename functionality (MCP tool invocation) is deferred to Phase 2 SDK integration.
+The CJS module passes `--repo <project-directory-name>` automatically. Keep `--dry-run` unless the user explicitly asks to apply a rename.
 
-**STOP** after displaying the message. Do not spawn an agent.
+**STOP** after displaying results. Do not spawn an agent.
 
 ### Step 11 -- Cypher
 
@@ -249,6 +254,8 @@ Run:
 ```bash
 node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" gitnexus cypher "<query>"
 ```
+
+The CJS module passes the raw query as a single argument to the configured GitNexus command and adds `--repo <project-directory-name>` automatically.
 
 Parse the JSON output and display:
 - If error, display the error message and **STOP**
