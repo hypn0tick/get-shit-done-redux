@@ -100,6 +100,9 @@ Module owning SDK-to-`get-shit-done-redux` compatibility policy: legacy asset di
 ### Runtime-Global Skills Policy Module
 Module owning runtime-aware global skills directory policy for SDK query surfaces. Resolves runtime-global skills bases/skill paths from runtime + env precedence, renders display paths for warnings/manifests, and reports unsupported runtimes with no skills directory.
 
+### Runtime Name Policy Module
+Shared CJS/SDK Module owning runtime identity normalization at runtime-selection seams. Canonicalizes alias signals from env/config (`GSD_RUNTIME`, `.planning/config.json:runtime`) to supported runtime IDs so output emitters and query runtime gates stay consistent across naming variants (for example `codex-app`/`codex-cli` -> `codex`). Sources: `get-shit-done/bin/lib/runtime-name-policy.cjs`, `sdk/src/runtime-name-policy.ts`, alias manifest `sdk/shared/runtime-aliases.manifest.json`.
+
 ### Installer Migration Authoring Guard Module
 Module owning validation for Installer Migration Module records and planned actions. It enforces migration metadata, explicit install scopes, ownership evidence for destructive/config actions, and runtime contract citations for runtime config rewrites before a migration can enter planning or apply.
 
@@ -609,3 +612,69 @@ Migration plan: Phase 1 (#3465) seam additions complete; Phase 2 (#3466) targets
 `PROC.TRIAGE.routing-incoming=stale-bug-already-fixed to close as duplicate of originating issue + cite fix PR + first stable tag; release-publish-or-backport to ready-for-human; reporter-can-self-test to awaiting-retest`
 `PROC.TRIAGE.comment-shape=lead with "duplicate of #NNNN, fixed by PR #MMMM, in v1.X.Y"; show current code snippet proving bug-surface gone; give @latest and @next upgrade commands; close`
 `PROC.TRIAGE.no-duplicate-label=this repo has no duplicate label; framing lives in comment text + closing the issue`
+
+---
+
+## PR fix discipline — patterns observed 2026-05-23
+
+Full detail in `~/.claude/skills/gsd-pr-fix-discipline/SKILL.md`. AI agents MUST check this section before pushing to `open-gsd/get-shit-done-redux`.
+
+### INVENTORY / manifest drift
+
+- **Symptom:** `inventory-counts.test.cjs` fails — `"<dir> (N shipped)" disagrees with filesystem (N+1)`
+- **Affected this session:** #154, #156, #143, #155, #169
+- **Fix:** Add row to `docs/INVENTORY.md` CLI Modules table + increment headline count + `node scripts/gen-inventory-manifest.cjs --write`
+
+### Stale sdk/dist consumed by gen scripts
+
+- **Symptom:** `gen-*.mjs` emits stale CJS; correct fixes appear to be reverted by subsequent regeneration passes
+- **Affected this session:** #154 (2nd-pass agent reverted a correct slash-form fix)
+- **Fix:** Always `npm run build:sdk &&` before `node sdk/scripts/gen-*.mjs`; PR #169 adds staleness check
+
+### Slash command two-tier confusion
+
+- **Symptom:** `tests/bug-2543-gsd-slash-namespace.test.cjs` or `tests/bug-3584-runtime-slash-emitters.test.cjs` fails
+- **Affected this session:** #154 (three passes), #164 (added the authoritative matrix)
+- **Fix:** Consult `## Slash-command form` section of this file before touching any `/gsd-` or `/gsd:` token — colon for `agents/`/`commands/`, hyphen for runtime emitters
+
+### Concurrency cancel-in-progress masking real CI state
+
+- **Symptom:** `gh pr checks` shows failures but the latest commit SHA's run was cancelled before Tests even started
+- **Affected this session:** #154, #136
+- **Fix:** `gh workflow run Tests --repo open-gsd/get-shit-done-redux --ref <branch>`; verify with `gh run list --branch <branch> --workflow Tests --limit 1 --json status,conclusion,headSha`
+
+### Missing changeset fragment
+
+- **Symptom:** `changeset-lint` fails with `fail_missing_fragment` (~5s)
+- **Affected this session:** #156, #143, #164
+- **Fix:** `node scripts/changeset/new.cjs --type <Type> --pr <N> --body "..."` or apply `no-changelog` label for doc-only PRs
+
+### Cross-platform Windows / Node 24 hazards
+
+- **Symptom:** Windows CI leg fails; Mac/Linux green — POSIX paths in `node -e`, hardcoded `.nvmrc` fixtures, 2000ms wall-clock budget flakes, `synckit` uncaught Worker exception
+- **Affected this session:** #157
+- **Fix:** Use `./package.json` not `$PWD/package.json`; write `.nvmrc` dynamically in `before()` hook; use 5000ms budget; wrap `getExecuteForCjs()` in `try/catch`
+
+### Sub-agent rubber-duck stall
+
+- **Symptom:** Sub-agent returns a question list and halts; no commits or push in the worktree
+- **Affected this session:** Multiple agents mid-session
+- **Fix:** Every sub-agent brief must include: `Skill rubber-duck is BANNED in this sub-agent. Convert to internal monologue and proceed.`
+
+### Stacked PR squash-merge breakage
+
+- **Symptom:** After base PR squash-merges, stacked PR shows conflicts or wrong diff; GitHub auto-retarget fails
+- **Affected this session:** #158 stacked on #156
+- **Fix:** `git rebase --onto main <old-base> <stacked-branch>` then force-push and `gh pr edit --base main`
+
+### `tee` pipe swallowing exit codes
+
+- **Symptom:** `gsd-test-summary --both 2>&1 | tee /tmp/log` returns `0` even when Docker reports failures
+- **Affected this session:** Session-wide risk
+- **Fix:** Run un-piped, or `set -o pipefail` before the pipe
+
+### Auto-merge disabled
+
+- **Symptom:** `gh pr merge --auto` returns `GraphQL: Auto merge is not allowed for this repository`
+- **Affected this session:** All stacked PRs
+- **Fix:** Merge manually by hand in dependency order once CI greens; `gh pr merge <N> --squash --repo open-gsd/get-shit-done-redux`

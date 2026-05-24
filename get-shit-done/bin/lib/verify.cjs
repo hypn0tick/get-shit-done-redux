@@ -2,6 +2,13 @@
  * Verify — Verification suite, consistency, and health validation
  */
 
+const {
+  // Issue #6 exports (W006/W007 phase variant helpers)
+  phaseVariants, buildRoadmapPhaseVariants, buildNotStartedPhaseVariants,
+  // Issue #26 exports (W005 regex, W006-archived regex constants, I001 helper)
+  phaseDirNameRe, PHASE_TOKEN_FROM_DIR_RE, MILESTONE_ARCHIVE_DIR_RE, canonicalPlanStem,
+} = require('./validate.generated.cjs');
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -398,8 +405,8 @@ function cmdVerifyKeyLinks(cwd, planFilePath, raw) {
   }, raw, verified === results.length ? 'valid' : 'invalid');
 }
 
-const PHASE_TOKEN_FROM_DIR_RE = /^(?:[A-Z]{1,6}-)?(\d+[A-Z]?(?:\.\d+)*)(?:-|$)/i;
-const MILESTONE_ARCHIVE_DIR_RE = /^v\d+.*-phases$/i;
+// PHASE_TOKEN_FROM_DIR_RE and MILESTONE_ARCHIVE_DIR_RE are sourced from
+// validate.generated.cjs (issue #26, ADR-3524). No inline copies.
 
 function listMilestoneArchiveDirs(planBase) {
   const milestonesDir = path.join(planBase, 'milestones');
@@ -594,15 +601,8 @@ function cmdValidateConsistency(cwd, raw) {
   output({ passed, errors, warnings, warning_count: warnings.length }, raw, passed ? 'passed' : 'failed');
 }
 
-/**
- * Canonical plan stem used for PLAN/SUMMARY matching.
- * Mirrors canonicalPlanStem in sdk/src/query/validate.ts (#3479 / #3806).
- * Example: `68-01-scaffolding` -> `68-01`.
- */
-function canonicalPlanStem(stem) {
-  const m = stem.match(/^(\d+[A-Z]?(?:\.\d+)*-\d+)/i);
-  return m ? m[1] : stem;
-}
+// canonicalPlanStem is sourced from validate.generated.cjs (issue #26, ADR-3524).
+// No inline copy — see top-of-file require() for the import.
 
 function cmdValidateHealth(cwd, options, raw) {
   // Guard: detect if CWD is the home directory (likely accidental)
@@ -785,8 +785,9 @@ function cmdValidateHealth(cwd, options, raw) {
   } catch { /* intentionally empty */ }
 
   // ─── Check 6: Phase directory naming (NN-name format) ─────────────────────
+  // phaseDirNameRe sourced from validate.generated.cjs (issue #26, ADR-3524).
   for (const e of phaseDirEntries) {
-    if (!e.name.match(/^\d{2,}(?:\.\d+)*-[\w-]+$/)) {
+    if (!e.name.match(phaseDirNameRe)) {
       addIssue('warning', 'W005', `Phase directory "${e.name}" doesn't follow NN-name format`, 'Rename to match pattern (e.g., 01-setup)');
     }
   }
@@ -854,48 +855,63 @@ function cmdValidateHealth(cwd, options, raw) {
   // archive (completed + archived). forEachArchivedPhaseToken is therefore
   // called below to add archived dirs to diskPhases so W006 does not fire
   // for them. (#3652, #3806)
+  //
+  // Fix #6 (three drift items vs sdk/src/query/validate.ts Check 8):
+  //   1. activeDiskPhases: separate from diskPhases; only active phasesDir phases.
+  //      W007 uses activeDiskPhases so archived phases don't produce false W007.
+  //   2. phaseVariants() + buildRoadmapPhaseVariants(): W006 disk-existence check
+  //      and W007 roadmap-membership check now use full variant sets, fixing
+  //      false W006/W007 for letter-suffix phases with padding mismatch.
+  //   3. buildNotStartedPhaseVariants(): replaces raw+parseInt-padded notStartedPhases
+  //      with phaseVariants() expansion, fixing W006 unchecked-phase skip for
+  //      zero-padded letter-suffix forms.
   if (fs.existsSync(roadmapPath)) {
     const roadmapContentRaw = fs.readFileSync(roadmapPath, 'utf-8');
     const roadmapContent = extractCurrentMilestone(roadmapContentRaw, cwd);
-    const roadmapPhases = new Set();
-    const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:/gi;
-    let m;
-    while ((m = phasePattern.exec(roadmapContent)) !== null) {
-      roadmapPhases.add(m[1]);
-    }
 
+    // Build roadmapPhases (raw) and roadmapPhaseVariants (all normalized variants).
+    // roadmapPhases: used for W006 disk-existence check (preserve original for message).
+    // roadmapPhaseVariants: used for W007 roadmap-membership check.
+    const { roadmapPhases, roadmapPhaseVariants } = buildRoadmapPhaseVariants(roadmapContent);
+
+    // diskPhases: active phasesDir + archived milestone dirs (for W006 — archived phases
+    // are valid on-disk locations for historical ROADMAP phases).
     const diskPhases = collectDiskPhases(planBase);
     // Include archived milestone phase directories as valid on-disk locations.
-    // Mirrors forEachArchivedPhaseToken call in sdk/src/query/validate.ts
-    // Check 8. (#3806)
+    // Mirrors forEachArchivedPhaseToken call in sdk/src/query/validate.ts Check 8. (#3806)
     forEachArchivedPhaseToken(planBase, (token) => diskPhases.add(token));
 
-    // Build a set of phases explicitly marked not-yet-started in the ROADMAP
-    // summary list (- [ ] **Phase N:**). These phases are intentionally absent
-    // from disk -- W006 must not fire for them (#2009).
-    const notStartedPhases = new Set();
-    const uncheckedPattern = /-\s*\[\s\]\s*\*{0,2}Phase\s+(\d+[A-Z]?(?:\.\d+)*)[:\s*]/gi;
-    let um;
-    while ((um = uncheckedPattern.exec(roadmapContent)) !== null) {
-      notStartedPhases.add(um[1]);
-      // Also add zero-padded variant so 1 and 01 both match
-      notStartedPhases.add(String(parseInt(um[1], 10)).padStart(2, '0'));
-    }
+    // activeDiskPhases: only phases from the active phasesDir (NOT archived).
+    // Used for W007: archived phases should not trigger W007 even if absent from
+    // current ROADMAP (they were shipped in a prior milestone). (#6 drift item 1)
+    const activeDiskPhases = collectDiskPhases(planBase);
 
-    // Phases in ROADMAP but not on disk
+    // Build a set of all variants of phases explicitly marked not-yet-started in
+    // the ROADMAP summary list (- [ ] **Phase N:**). These phases are intentionally
+    // absent from disk — W006 must not fire for them. (#2009, #6 drift item 3)
+    // buildNotStartedPhaseVariants() uses phaseVariants() so zero-padded letter-suffix
+    // forms like "03B" are recognized even when the unchecked entry says "3B".
+    const notStartedPhases = buildNotStartedPhaseVariants(roadmapContent);
+
+    // Phases in ROADMAP but not on disk (W006)
+    // Uses phaseVariants() for disk-existence check so "3B" matches disk dir "03B-foo".
     for (const p of roadmapPhases) {
-      const padded = String(parseInt(p, 10)).padStart(2, '0');
-      if (!diskPhases.has(p) && !diskPhases.has(padded)) {
+      const variants = phaseVariants(p);
+      const existsOnDisk = [...variants].some((v) => diskPhases.has(v));
+      if (!existsOnDisk) {
         // Skip phases explicitly flagged as not-yet-started in the summary list
-        if (notStartedPhases.has(p) || notStartedPhases.has(padded)) continue;
+        const isNotStarted = [...variants].some((v) => notStartedPhases.has(v));
+        if (isNotStarted) continue;
         addIssue('warning', 'W006', `Phase ${p} in ROADMAP.md but no directory on disk`, 'Create phase directory or remove from roadmap');
       }
     }
 
-    // Phases on disk but not in ROADMAP
-    for (const p of diskPhases) {
-      const unpadded = String(parseInt(p, 10));
-      if (!roadmapPhases.has(p) && !roadmapPhases.has(unpadded)) {
+    // Phases on disk but not in ROADMAP (W007)
+    // Uses activeDiskPhases (no archived) and roadmapPhaseVariants (all variants)
+    // so neither archived phases nor padding-mismatch phases trigger false W007.
+    for (const p of activeDiskPhases) {
+      const variants = phaseVariants(p);
+      if (![...variants].some((v) => roadmapPhaseVariants.has(v))) {
         addIssue('warning', 'W007', `Phase ${p} exists on disk but not in ROADMAP.md`, 'Add to roadmap or remove directory');
       }
     }

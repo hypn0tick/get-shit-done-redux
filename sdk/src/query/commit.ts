@@ -233,6 +233,22 @@ export async function ensureStrategyBranch(
     return { ok: true, reason: 'strategy-skipped: config load failed' };
   }
 
+  // Issue #105: when use_worktrees is false the primary checkout is shared or
+  // pinned (concurrent sessions / deliberate base-branch lock).  Auto-switching
+  // HEAD in that mode silently moves the shared checkout and causes commits from
+  // parallel sessions to land on the wrong branch.  Skip the switch entirely;
+  // the caller commits on whatever branch the primary is currently on.
+  // String "false" is tolerated for resilience against YAML/JSON parsers that
+  // leave boolean-like fields as strings.
+  const useWorktrees = config.workflow?.use_worktrees;
+  const isExplicitlyFalse = useWorktrees === false || useWorktrees === 'false';
+  if (isExplicitlyFalse) {
+    return {
+      ok: true,
+      reason: 'strategy-skipped: use_worktrees is false — shared/pinned primary checkout; branch auto-switch suppressed (#105)',
+    };
+  }
+
   const strategy = config.git.branching_strategy;
   if (!strategy || strategy === 'none') return { ok: true };
 

@@ -180,6 +180,8 @@ jobs:
       - name: Install and test
         run: |
           npm ci
+          chmod +x scripts/check-npm-integrity.sh
+          scripts/check-npm-integrity.sh
           npm run test:coverage
 
       - name: Commit pre-release version bump
@@ -195,12 +197,13 @@ jobs:
       - name: Verify tarball ships sdk/dist/cli.js (bug #2647)
         run: bash scripts/verify-tarball-sdk-dist.sh
 
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
       - name: Dry-run publish validation
         run: |
           npm publish --dry-run --tag next
           cd sdk && npm publish --dry-run --tag next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Tag and push
         if: ${{ !inputs.dry_run }}
@@ -223,15 +226,13 @@ jobs:
 
       - name: Publish to npm (next)
         if: ${{ !inputs.dry_run }}
+        # --provenance is automatic under OIDC trusted publishing
         run: npm publish --provenance --access public --tag next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish SDK to npm (next)
         if: ${{ !inputs.dry_run }}
+        # --provenance is automatic under OIDC trusted publishing
         run: cd sdk && npm publish --provenance --access public --tag next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub pre-release
         if: ${{ !inputs.dry_run }}
@@ -329,8 +330,12 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: finalize v${VERSION}"
 
       - name: Install and test
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           npm ci
+          chmod +x scripts/check-npm-integrity.sh
+          scripts/check-npm-integrity.sh
           npm run test:coverage
 
       - name: Build SDK dist for tarball
@@ -339,12 +344,13 @@ jobs:
       - name: Verify tarball ships sdk/dist/cli.js (bug #2647)
         run: bash scripts/verify-tarball-sdk-dist.sh
 
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
       - name: Dry-run publish validation
         run: |
           npm publish --dry-run
           cd sdk && npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create PR to merge release back to main
         if: ${{ !inputs.dry_run }}
@@ -397,15 +403,13 @@ jobs:
 
       - name: Publish to npm (latest)
         if: ${{ !inputs.dry_run }}
+        # --provenance is automatic under OIDC trusted publishing
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish SDK to npm (latest)
         if: ${{ !inputs.dry_run }}
+        # --provenance is automatic under OIDC trusted publishing
         run: cd sdk && npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}
@@ -422,7 +426,6 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ inputs.version }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Point next to the stable release so @next never returns something
           # older than @latest. This prevents stale pre-release installs.
